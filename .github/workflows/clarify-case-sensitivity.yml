@@ -1,0 +1,58 @@
+name: Apply case-sensitivity clarification
+
+on:
+  push:
+    branches:
+      - chore/init-spec-kit
+    paths:
+      - .github/workflows/clarify-case-sensitivity.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update specification
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("specs/001-env-validation/spec.md")
+          text = path.read_text()
+
+          old = "- Q: How should Envcheck handle a non-empty, non-comment line that cannot be parsed as a valid dotenv declaration? → A: Treat it as a parsing error and fail validation.\n"
+          new = old + "- Q: Should variable names be compared case-sensitively across `.env`, `.env.example`, and `.env.schema`? → A: Yes. Variable names are case-sensitive on all supported platforms.\n"
+          if old not in text:
+              raise SystemExit("Clarifications insertion point not found")
+          text = text.replace(old, new, 1)
+
+          old = "6. **Given** a target or example file contains a non-empty, non-comment line that is not a valid\n   dotenv declaration, **When** validation runs, **Then** a parsing error is reported and validation\n   fails rather than ignoring the line.\n"
+          new = old + "7. **Given** one file declares `PORT` and another declares `port`, **When** validation compares\n   variable names, **Then** they are treated as distinct variables on every supported platform.\n"
+          if old not in text:
+              raise SystemExit("Acceptance insertion point not found")
+          text = text.replace(old, new, 1)
+
+          old = "- A variable name occurs multiple times with different values; duplication remains an error.\n"
+          new = old + "- Variable names that differ only by letter case, such as `PORT` and `port`, are distinct.\n"
+          if old not in text:
+              raise SystemExit("Edge-case insertion point not found")
+          text = text.replace(old, new, 1)
+
+          old = "- **FR-011**: The parser MUST distinguish a missing variable from a declared variable with an empty\n  value.\n"
+          new = "- **FR-011**: The parser MUST distinguish a missing variable from a declared variable with an empty\n  value. Variable names MUST be treated as case-sensitive identifiers for parsing, duplicate\n  detection, example-file matching, and schema matching on Linux, macOS, and Windows.\n"
+          if old not in text:
+              raise SystemExit("FR-011 replacement point not found")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+
+      - name: Commit specification clarification
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add specs/001-env-validation/spec.md
+          git commit -m "docs: clarify variable name case sensitivity"
+          git push
