@@ -69,9 +69,9 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement example-presence rules in `src/validation/rules/presence.rs`: every example key must exist, example values are ignored, key order is irrelevant, duplicates in either document are errors, and target-only keys are `additional_variable` warnings
-- [ ] T016 [US1] Implement example-file validation orchestration and structured diagnostics in `src/validation/validator.rs` using only `EnvDocument` inputs and returning `ValidationResult`
-- [ ] T017 [US1] Wire explicit `--example` file reading/parsing, example validation, stdout rendering for completed validation, and structured preventing failures for unreadable/malformed target or example files to stderr with exit `3`, preserving affected path, safe reason, and available source location without target-value disclosure in `src/main.rs`
+- [X] T015 [US1] Implement example-presence rules in `src/validation/rules/presence.rs`: every example key must exist, example values are ignored, key order is irrelevant, duplicates in either document are errors, and target-only keys are `additional_variable` warnings
+- [X] T016 [US1] Implement example-file validation orchestration and structured diagnostics in `src/validation/validator.rs` using only `EnvDocument` inputs and returning `ValidationResult`
+- [X] T017 [US1] Wire explicit `--example` file reading/parsing, example validation, stdout rendering for completed validation, and structured preventing failures for unreadable/malformed target or example files to stderr with exit `3`, preserving affected path, safe reason, and available source location without target-value disclosure in `src/main.rs`
 
 **Checkpoint**: Explicit `.env.example` comparison is fully functional and independently testable.
 
