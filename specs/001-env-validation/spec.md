@@ -8,6 +8,12 @@
 
 **Input**: User description: "Create a command-line application called envcheck that validates a target .env file against either .env.example or .env.schema, with deterministic validation, safe diagnostics, stable exit semantics, and a bounded MVP."
 
+## Clarifications
+
+### Session 2026-09-17
+
+- Q: How should Envcheck handle a non-empty, non-comment line that cannot be parsed as a valid dotenv declaration? → A: Treat it as a parsing error and fail validation.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Validate required variables from an example file (Priority: P1)
@@ -36,6 +42,9 @@ missing keys and duplicate declarations are errors while target-only keys are wa
    applied.
 5. **Given** the example file contains comments, blank lines, or example values, **When** validation
    runs, **Then** comments and blank lines are ignored and example values do not affect validity.
+6. **Given** a target or example file contains a non-empty, non-comment line that is not a valid
+   dotenv declaration, **When** validation runs, **Then** a parsing error is reported and validation
+   fails rather than ignoring the line.
 
 ---
 
@@ -136,6 +145,8 @@ the selected definition, diagnostic severity, and process success/failure semant
 - A target `.env` exists but is empty.
 - `.env.example` is empty: target variables are all additional variables and therefore warnings by
   default, unless the target itself contains duplicates.
+- A target or example file contains a non-empty, non-comment line that is not a valid dotenv
+  declaration; this is a parsing error and validation fails.
 - An optional schema variable is absent.
 - A required schema variable exists with an empty value.
 - A quoted value contains spaces, `#`, or `=` characters that are part of the value.
@@ -178,7 +189,9 @@ the selected definition, diagnostic severity, and process success/failure semant
 
 #### Dotenv parsing
 
-- **FR-010**: Environment and example files MUST ignore blank lines and comment-only lines.
+- **FR-010**: Environment and example files MUST ignore blank lines and comment-only lines. Any other
+  line that cannot be parsed as a valid dotenv declaration MUST produce a parsing error and cause
+  validation to fail rather than being ignored.
 - **FR-011**: The parser MUST distinguish a missing variable from a declared variable with an empty
   value.
 - **FR-012**: Duplicate variable declarations in the target `.env` MUST produce a validation error.
@@ -335,7 +348,8 @@ the selected definition, diagnostic severity, and process success/failure semant
   entries use numeric equality, and boolean entries use boolean meaning after accepted boolean
   parsing.
 - Dotenv parsing follows common semantics for comments, blank lines, quoted values, and `export`
-  prefixes, while interpolation is deliberately disabled.
+  prefixes, while interpolation is deliberately disabled. Non-empty, non-comment lines that are not
+  valid dotenv declarations are errors rather than ignored input.
 - Exact numeric exit codes and exact command flag names are deferred to technical planning, provided
   the success/non-success semantics defined here are preserved.
 - Strict handling of additional variables is intentionally excluded from the MVP; additional
