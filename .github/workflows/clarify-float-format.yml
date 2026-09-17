@@ -1,0 +1,72 @@
+name: Apply float-format clarification
+
+on:
+  push:
+    branches:
+      - chore/init-spec-kit
+    paths:
+      - .github/workflows/clarify-float-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update specification
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("specs/001-env-validation/spec.md")
+          text = path.read_text()
+
+          old = "- Q: Should variable names be compared case-sensitively across `.env`, `.env.example`, and `.env.schema`? → A: Yes. Variable names are case-sensitive on all supported platforms.\n"
+          new = old + "- Q: Which representations should be accepted for `float` values? → A: Accept finite decimal and scientific-notation values; reject `NaN` and positive or negative infinity.\n"
+          if old not in text:
+              raise SystemExit("Clarifications insertion point not found")
+          text = text.replace(old, new, 1)
+
+          old = "1. **Given** a required integer variable has `min = 1` and `max = 65535`, **When** the target contains\n   `1` or `65535`, **Then** the value is valid because numeric bounds are inclusive.\n"
+          new = old + "2. **Given** a float variable contains a finite decimal or scientific-notation value such as `1.5`\n   or `1e3`, **When** validation runs, **Then** the value is accepted; `NaN`, positive infinity, and\n   negative infinity are rejected.\n"
+          if old not in text:
+              raise SystemExit("Float acceptance insertion point not found")
+          text = text.replace(old, new, 1)
+
+          # Renumber the remaining acceptance scenarios in User Story 2 from 2..10 to 3..11.
+          start = text.index("### User Story 2 - Validate typed environment values from a schema")
+          end = text.index("\n---\n\n### User Story 3", start)
+          block = text[start:end]
+          for n in range(10, 1, -1):
+              block = block.replace(f"\n{n}. **Given**", f"\n{n+1}. **Given**")
+          text = text[:start] + block + text[end:]
+
+          old = "- Float input uses a valid floating-point numeric representation.\n"
+          new = "- Float input may use finite decimal or scientific notation; `NaN` and positive or negative infinity\n  are invalid.\n"
+          if old not in text:
+              raise SystemExit("Float edge-case replacement point not found")
+          text = text.replace(old, new, 1)
+
+          old = "- **FR-044**: Float variables MUST accept valid floating-point numeric representations.\n"
+          new = "- **FR-044**: Float variables MUST accept finite decimal and scientific-notation numeric\n  representations. `NaN`, positive infinity, and negative infinity MUST be rejected.\n"
+          if old not in text:
+              raise SystemExit("FR-044 replacement point not found")
+          text = text.replace(old, new, 1)
+
+          old = "- `allowed` uses the declared scalar type for comparison; string entries are case-sensitive, numeric\n  entries use numeric equality, and boolean entries use boolean meaning after accepted boolean\n  parsing.\n"
+          new = old + "- Float parsing accepts only finite values; decimal and scientific notation are supported, while\n  `NaN` and infinities are rejected.\n"
+          if old not in text:
+              raise SystemExit("Assumption insertion point not found")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+
+      - name: Commit specification clarification
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add specs/001-env-validation/spec.md
+          git commit -m "docs: clarify float value representations"
+          git push
