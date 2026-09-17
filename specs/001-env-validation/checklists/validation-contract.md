@@ -10,69 +10,73 @@
 
 ## CLI Behavior Requirements
 
-- [ ] CHK001 Are the requirements explicit that the target `.env` path is mandatory while validator-definition paths may be explicit or auto-discovered? [Completeness, Spec §FR-001–FR-003]
-- [ ] CHK002 Is the precedence rule between explicit validator selection and automatic `.env.schema` / `.env.example` discovery stated without ambiguity? [Clarity, Spec §FR-002–FR-008]
-- [ ] CHK003 Is the behavior for supplying both an example path and a schema path clearly classified as invalid command usage? [Clarity, Spec §FR-004]
-- [ ] CHK004 Are success, warning-only, validation-error, argument-error, file-error, and schema-error outcomes all mapped to clear process success/non-success semantics? [Completeness, Spec §FR-053–FR-056]
-- [ ] CHK005 Is it clear which parts of the CLI contract are intentionally deferred to technical planning, including exact flag names and numeric exit-code assignments? [Clarity, Spec §FR-056, Assumptions]
-- [ ] CHK006 Does the specification state that once numeric exit-code meanings are published they form part of the stable public CLI contract? [Consistency, Spec §FR-056, Constitution §II]
-- [ ] CHK007 Are automatic-discovery requirements explicit that lookup occurs relative to the target file directory rather than the process working directory? [Clarity, Spec §FR-005–FR-008, Assumptions]
-- [ ] CHK008 Are warning semantics for additional target-only variables consistent between example-based and schema-based validation? [Consistency, Spec §FR-021, §FR-049]
+- [x] CHK001 Are the requirements explicit that the target `.env` path is mandatory while validator-definition paths may be explicit or auto-discovered? [Completeness, Spec §FR-001–FR-003]
+- [x] CHK002 Is the precedence rule between explicit validator selection and automatic `.env.schema` / `.env.example` discovery stated without ambiguity? [Clarity, Spec §FR-002–FR-008]
+- [x] CHK003 Is the behavior for supplying both an example path and a schema path clearly classified as invalid command usage? [Clarity, Spec §FR-004]
+- [x] CHK004 Are success, warning-only, validation-error, argument-error, file-error, and schema-error outcomes all mapped to clear process success/non-success semantics? [Completeness, Spec §FR-053–FR-056]
+- [x] CHK005 Is it clear which parts of the CLI contract are intentionally deferred to technical planning, including exact flag names and numeric exit-code assignments? [Clarity, Spec §FR-056, Assumptions]
+- [x] CHK006 Does the specification state that once numeric exit-code meanings are published they form part of the stable public CLI contract? [Consistency, Spec §FR-056, Constitution §II]
+- [x] CHK007 Are automatic-discovery requirements explicit that lookup occurs relative to the target file directory rather than the process working directory? [Clarity, Spec §FR-005–FR-008, Assumptions]
+- [x] CHK008 Are warning semantics for additional target-only variables consistent between example-based and schema-based validation? [Consistency, Spec §FR-021, §FR-049]
 
 ## Schema Validation Requirements
 
-- [ ] CHK009 Is the version-1 schema structure fully defined, including the required `version` field and `variables` table? [Completeness, Spec §FR-022–FR-023]
-- [ ] CHK010 Are all supported scalar types and all supported constraint properties enumerated exhaustively? [Completeness, Spec §FR-027–FR-028]
-- [ ] CHK011 Are defaults for `required` and `allow_empty` explicitly defined and consistent with the empty-value acceptance scenarios? [Consistency, Spec §FR-029–FR-032]
-- [ ] CHK012 Is constraint applicability unambiguous for numeric bounds, string lengths, patterns, and `allowed` values? [Clarity, Spec §FR-033–FR-041]
-- [ ] CHK013 Are invalid combinations such as `min_length` on integers, invalid constraint value types, and contradictory bounds explicitly required to invalidate the schema rather than be ignored? [Completeness, Spec §FR-033–FR-041]
-- [ ] CHK014 Are unknown top-level and variable-rule properties explicitly prohibited so forward-incompatible schema content cannot be silently accepted? [Clarity, Spec §FR-026–FR-028]
-- [ ] CHK015 Is invalid regular-expression behavior specified as a schema-definition error rather than a target-variable validation error? [Clarity, Spec §FR-037–FR-038]
+- [x] CHK009 Is the version-1 schema structure fully defined, including the required `version` field and `variables` table? [Completeness, Spec §FR-022–FR-023]
+- [x] CHK010 Are all supported scalar types and all supported constraint properties enumerated exhaustively? [Completeness, Spec §FR-027–FR-028]
+- [x] CHK011 Are defaults for `required` and `allow_empty` explicitly defined and consistent with the empty-value acceptance scenarios? [Consistency, Spec §FR-029–FR-032]
+- [x] CHK012 Is constraint applicability unambiguous for numeric bounds, string lengths, patterns, and `allowed` values? [Clarity, Spec §FR-033–FR-041]
+- [x] CHK013 Are invalid combinations such as `min_length` on integers, invalid constraint value types, and contradictory bounds explicitly required to invalidate the schema rather than be ignored? [Completeness, Spec §FR-033–FR-041]
+- [x] CHK014 Are unknown top-level and variable-rule properties explicitly prohibited so forward-incompatible schema content cannot be silently accepted? [Clarity, Spec §FR-026–FR-028]
+- [x] CHK015 Is invalid regular-expression behavior specified as a schema-definition error rather than a target-variable validation error? [Clarity, Spec §FR-037–FR-038]
 - [ ] CHK016 Are type-compatibility rules for entries in `allowed` defined for string, integer, float, and boolean variables? [Completeness, Spec §FR-039–FR-040, Assumptions]
-- [ ] CHK017 Is schema variable-name validity explicitly aligned with the same `[A-Za-z_][A-Za-z0-9_]*` and case-sensitive rules used by dotenv files? [Consistency, Spec §FR-011, Clarifications]
-- [ ] CHK018 Is unsupported schema-version behavior clearly distinguished from malformed TOML and other schema-content errors? [Clarity, Spec §FR-024–FR-026]
+  - **Review note (FAIL)**: FR-039 requires entries to be “compatible” with the declared type, but `spec.md` does not define whether integer TOML values are valid for a `float` rule or whether float TOML values are valid for an `integer` rule. Smallest fix: extend FR-039 (or its Assumptions entry) with the four explicit compatibility rules: string→TOML string, integer→TOML integer, float→finite TOML integer or float, boolean→TOML boolean.
+- [x] CHK017 Is schema variable-name validity explicitly aligned with the same `[A-Za-z_][A-Za-z0-9_]*` and case-sensitive rules used by dotenv files? [Consistency, Spec §FR-011, Clarifications]
+- [x] CHK018 Is unsupported schema-version behavior clearly distinguished from malformed TOML and other schema-content errors? [Clarity, Spec §FR-024–FR-026]
 
 ## Environment-Value Security Requirements
 
-- [ ] CHK019 Is the prohibition on printing actual target environment-variable values stated for all default diagnostics, not only variables conventionally considered secrets? [Completeness, Spec §FR-052, Constitution §V–VI]
-- [ ] CHK020 Are diagnostics required to remain actionable by naming the variable, violated rule, and expected constraint without revealing the supplied value? [Clarity, Spec §FR-051–FR-052]
+- [x] CHK019 Is the prohibition on printing actual target environment-variable values stated for all default diagnostics, not only variables conventionally considered secrets? [Completeness, Spec §FR-052, Constitution §V–VI]
+- [x] CHK020 Are diagnostics required to remain actionable by naming the variable, violated rule, and expected constraint without revealing the supplied value? [Clarity, Spec §FR-051–FR-052]
 - [ ] CHK021 Are file-level parse and schema errors specified so they can provide useful context without requiring disclosure of environment values? [Security Coverage, Spec §FR-009, §FR-024, §FR-050–FR-052]
-- [ ] CHK022 Is read-only behavior explicit for `.env`, `.env.example`, and `.env.schema`, including prohibition of automatic repairs or inserted variables? [Completeness, Spec §FR-058–FR-059]
-- [ ] CHK023 Are remote services, machine environment variables, secret managers, and external configuration sources explicitly excluded from validation inputs? [Security/Determinism, Spec §FR-060–FR-062]
-- [ ] CHK024 Is the security requirement consistent with the determinism requirement so diagnostics cannot vary because of ambient secret or environment state? [Consistency, Spec §FR-052, §FR-060–FR-061]
+  - **Review note (FAIL)**: FR-009 requires actionable context for unreadable files, but malformed dotenv/schema requirements do not explicitly require safe file/location/reason context; FR-051 only covers variable-level errors. Smallest fix: add one requirement that file-level dotenv/schema diagnostics identify the affected file and safe parse/schema reason (and line/column when available) without including target environment values.
+- [x] CHK022 Is read-only behavior explicit for `.env`, `.env.example`, and `.env.schema`, including prohibition of automatic repairs or inserted variables? [Completeness, Spec §FR-058–FR-059]
+- [x] CHK023 Are remote services, machine environment variables, secret managers, and external configuration sources explicitly excluded from validation inputs? [Security/Determinism, Spec §FR-060–FR-062]
+- [x] CHK024 Is the security requirement consistent with the determinism requirement so diagnostics cannot vary because of ambient secret or environment state? [Consistency, Spec §FR-052, §FR-060–FR-061]
 
 ## Boundary-Value Requirements
 
-- [ ] CHK025 Are numeric minimum and maximum bounds explicitly inclusive for both integer and float validation? [Clarity, Spec §FR-035]
-- [ ] CHK026 Are integer requirements clear about rejecting representations that require floating-point interpretation? [Clarity, Spec §FR-043]
-- [ ] CHK027 Are float requirements explicit that finite decimal and scientific notation are accepted while `NaN` and positive/negative infinity are rejected? [Clarity, Spec §FR-044, Clarifications]
-- [ ] CHK028 Are string length boundaries defined as non-negative whole-number constraints with contradictory `min_length > max_length` definitions rejected? [Completeness, Spec §FR-036, §FR-041]
-- [ ] CHK029 Are empty, missing, and non-empty values defined as distinct states, including the rule that `allow_empty = true` skips type/value constraints for an existing empty value? [Clarity, Spec §FR-011, §FR-029–FR-032]
-- [ ] CHK030 Are boolean acceptance boundaries exhaustive and unambiguous: case-insensitive `true`/`false` only, with numeric and convenience aliases rejected? [Completeness, Spec §FR-045–FR-046]
-- [ ] CHK031 Are case-sensitive `allowed` comparisons for strings and typed comparisons for numeric/boolean values specified consistently? [Consistency, Spec §FR-039–FR-040, Assumptions]
-- [ ] CHK032 Are variable-name boundaries explicit, including valid first characters, valid subsequent characters, and case-sensitive identity? [Completeness, Spec §FR-011, Clarifications]
-- [ ] CHK033 Are quoted-value and inline-comment boundaries explicit enough to distinguish literal `#` characters from comments? [Clarity, Spec §FR-015, Clarifications]
+- [x] CHK025 Are numeric minimum and maximum bounds explicitly inclusive for both integer and float validation? [Clarity, Spec §FR-035]
+- [x] CHK026 Are integer requirements clear about rejecting representations that require floating-point interpretation? [Clarity, Spec §FR-043]
+- [x] CHK027 Are float requirements explicit that finite decimal and scientific notation are accepted while `NaN` and positive/negative infinity are rejected? [Clarity, Spec §FR-044, Clarifications]
+- [x] CHK028 Are string length boundaries defined as non-negative whole-number constraints with contradictory `min_length > max_length` definitions rejected? [Completeness, Spec §FR-036, §FR-041]
+- [x] CHK029 Are empty, missing, and non-empty values defined as distinct states, including the rule that `allow_empty = true` skips type/value constraints for an existing empty value? [Clarity, Spec §FR-011, §FR-029–FR-032]
+- [x] CHK030 Are boolean acceptance boundaries exhaustive and unambiguous: case-insensitive `true`/`false` only, with numeric and convenience aliases rejected? [Completeness, Spec §FR-045–FR-046]
+- [x] CHK031 Are case-sensitive `allowed` comparisons for strings and typed comparisons for numeric/boolean values specified consistently? [Consistency, Spec §FR-039–FR-040, Assumptions]
+- [x] CHK032 Are variable-name boundaries explicit, including valid first characters, valid subsequent characters, and case-sensitive identity? [Completeness, Spec §FR-011, Clarifications]
+- [x] CHK033 Are quoted-value and inline-comment boundaries explicit enough to distinguish literal `#` characters from comments? [Clarity, Spec §FR-015, Clarifications]
 - [ ] CHK034 Are exact-at-boundary, just-below, and just-above scenarios represented in the acceptance/edge-case requirements for numeric and string constraints? [Coverage, Spec §User Story 2, Edge Cases]
+  - **Review note (FAIL)**: User Story 2 covers exact numeric bounds, and the edge cases mention one-character-outside string lengths, but requirements do not explicitly cover numeric just-below/just-above cases or string values exactly at both length bounds. Smallest fix: add acceptance/edge scenarios for numeric values exactly at, immediately below, and immediately above `min`/`max`, plus string lengths exactly at and one character outside `min_length`/`max_length`.
 
 ## Error Reporting and Failure Semantics
 
-- [ ] CHK035 Does the specification clearly distinguish parsing errors, schema-definition errors, validation errors, warnings, and successful validation as separate diagnostic classes? [Completeness, Spec §FR-009–FR-010, §FR-024–FR-026, §FR-050]
-- [ ] CHK036 Are malformed non-comment dotenv lines explicitly required to fail instead of being ignored? [Clarity, Spec §FR-010, Clarifications]
-- [ ] CHK037 Are duplicate declarations explicitly classified as errors with no first-value-wins or last-value-wins ambiguity? [Clarity, Spec §FR-012–FR-014]
-- [ ] CHK038 Are missing required variables and present-but-empty variables required to produce distinguishable error reasons? [Clarity, Spec §FR-011, §FR-029–FR-032, §FR-047]
-- [ ] CHK039 Is deterministic diagnostic ordering required for identical input files and application version? [Measurability, Spec §FR-057, §FR-061]
-- [ ] CHK040 Is warning-only behavior explicitly non-failing while any validation error is explicitly failing? [Consistency, Spec §FR-053–FR-054]
-- [ ] CHK041 Are unreadable target files and unreadable validation-definition files covered with actionable file-level diagnostics and non-success status? [Coverage, Spec §FR-009, §FR-055]
-- [ ] CHK042 Is the "no validation definition found" case specified distinctly from unreadable or malformed validator-definition cases? [Clarity, Spec §FR-007, §FR-009, §FR-024]
+- [x] CHK035 Does the specification clearly distinguish parsing errors, schema-definition errors, validation errors, warnings, and successful validation as separate diagnostic classes? [Completeness, Spec §FR-009–FR-010, §FR-024–FR-026, §FR-050]
+- [x] CHK036 Are malformed non-comment dotenv lines explicitly required to fail instead of being ignored? [Clarity, Spec §FR-010, Clarifications]
+- [x] CHK037 Are duplicate declarations explicitly classified as errors with no first-value-wins or last-value-wins ambiguity? [Clarity, Spec §FR-012–FR-014]
+- [x] CHK038 Are missing required variables and present-but-empty variables required to produce distinguishable error reasons? [Clarity, Spec §FR-011, §FR-029–FR-032, §FR-047]
+- [x] CHK039 Is deterministic diagnostic ordering required for identical input files and application version? [Measurability, Spec §FR-057, §FR-061]
+- [x] CHK040 Is warning-only behavior explicitly non-failing while any validation error is explicitly failing? [Consistency, Spec §FR-053–FR-054]
+- [x] CHK041 Are unreadable target files and unreadable validation-definition files covered with actionable file-level diagnostics and non-success status? [Coverage, Spec §FR-009, §FR-055]
+- [x] CHK042 Is the "no validation definition found" case specified distinctly from unreadable or malformed validator-definition cases? [Clarity, Spec §FR-007, §FR-009, §FR-024]
 
 ## Cross-Cutting Consistency and Readiness
 
-- [ ] CHK043 Are CLI, schema, security, boundary-value, and diagnostic requirements mutually consistent with the constitution's correctness, CLI stability, actionable-error, security, and determinism principles? [Consistency, Constitution §I–VI, §IX]
-- [ ] CHK044 Do the measurable success criteria cover schema rejection, secret non-disclosure, deterministic output, cross-platform semantics, and boundary-value correctness? [Acceptance Criteria, Spec §SC-001–SC-007]
-- [ ] CHK045 Are Linux, macOS, and Windows expectations stated at the requirements level for identifier matching, file semantics, and CLI success/failure behavior where platform variation could matter? [Coverage, Spec §FR-011, §SC-007]
-- [ ] CHK046 Are MVP exclusions sufficiently explicit to prevent interpolation, remote schemas, secret-manager integration, auto-modification, custom validators, nested objects, dedicated arrays, and specialized URL/email/IP/path/duration validation from being inferred as required? [Scope, Spec §FR-062]
+- [x] CHK043 Are CLI, schema, security, boundary-value, and diagnostic requirements mutually consistent with the constitution's correctness, CLI stability, actionable-error, security, and determinism principles? [Consistency, Constitution §I–VI, §IX]
+- [x] CHK044 Do the measurable success criteria cover schema rejection, secret non-disclosure, deterministic output, cross-platform semantics, and boundary-value correctness? [Acceptance Criteria, Spec §SC-001–SC-007]
+- [x] CHK045 Are Linux, macOS, and Windows expectations stated at the requirements level for identifier matching, file semantics, and CLI success/failure behavior where platform variation could matter? [Coverage, Spec §FR-011, §SC-007]
+- [x] CHK046 Are MVP exclusions sufficiently explicit to prevent interpolation, remote schemas, secret-manager integration, auto-modification, custom validators, nested objects, dedicated arrays, and specialized URL/email/IP/path/duration validation from being inferred as required? [Scope, Spec §FR-062]
 - [ ] CHK047 Are intentionally deferred technical decisions separated from observable product behavior so planning cannot silently change validation semantics? [Consistency, Spec §FR-056, Assumptions, Constitution §II]
-- [ ] CHK048 Are all requirements concerning environment values written so they can be reviewed without examples that expose real credentials or secrets? [Security, Constitution §VI]
+  - **Review note (FAIL)**: Exact flags/exit-code numbers are explicitly deferred, but the accepted lexical forms and numeric range for `integer`/`float` remain observable behavior that `spec.md` leaves partially implicit while planning selects `i64`/`f64`. Smallest fix: define the accepted numeric lexical grammar and range in FR-043/FR-044 (or explicitly state the chosen `i64`/finite-`f64` semantics as product requirements), so planning cannot alter which textual values validate.
+- [x] CHK048 Are all requirements concerning environment values written so they can be reviewed without examples that expose real credentials or secrets? [Security, Constitution §VI]
 
 ## Notes
 
