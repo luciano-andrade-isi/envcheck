@@ -1,0 +1,91 @@
+name: US4 RED Retry
+on:
+  push:
+    branches: [chore/init-spec-kit]
+    paths: ['.github/workflows/us4-red-retry.yml']
+permissions:
+  contents: write
+jobs:
+  red-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/init-spec-kit
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify prerequisites and baseline
+        run: |
+          set -euo pipefail
+          test ! -e .specify/extensions.yml
+          bash .specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for path in sorted(Path('specs/001-env-validation/checklists').glob('*.md')):
+              text = path.read_text()
+              assert not re.findall(r'^- \[ \] ', text, flags=re.M)
+          tasks = Path('specs/001-env-validation/tasks.md').read_text()
+          assert all(f'- [X] T{i:03d}' in tasks for i in range(1, 44))
+          assert all(f'- [ ] T{i:03d}' in tasks for i in range(44, 51))
+          PY
+          cargo test --test cli
+      - name: Materialize and format T044-T046 tests
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/us4-red.yml').read_text()
+          start = "          cat >> tests/cli.rs <<'RS'\n"
+          end = "\n          RS\n"
+          block = workflow.split(start, 1)[1].split(end, 1)[0]
+          lines = []
+          for line in block.splitlines():
+              if line.startswith('          '):
+                  line = line[10:]
+              lines.append(line)
+          with Path('tests/cli.rs').open('a') as file:
+              file.write('\n'.join(lines))
+              file.write('\n')
+          PY
+          cargo fmt
+          cargo fmt --check
+          git diff --exit-code -- src/main.rs src/cli.rs src/env src/schema src/validation src/output Cargo.toml Cargo.lock
+      - name: Verify existing US1-US3 CLI tests stay green
+        run: cargo test --test cli -- --skip us4_
+      - name: Observe expected US4 RED
+        run: |
+          set -euo pipefail
+          set +e
+          cargo test --test cli > /tmp/us4-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/us4-red.log
+          test "$status" -ne 0
+          grep -q 'us4_discovery_prefers_sibling_schema_over_sibling_example ... FAILED' /tmp/us4-red.log
+          grep -q 'us4_discovery_falls_back_to_sibling_example_when_schema_is_absent ... FAILED' /tmp/us4-red.log
+          grep -q 'us4_no_discovered_definition_is_exit_three_with_safe_context ... FAILED' /tmp/us4-red.log
+      - name: Verify exact 100-run determinism contract
+        run: cargo test --test cli us4_representative_validation_is_identical_across_exactly_100_runs -- --exact
+      - name: Mark T044-T046 and commit RED contract
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('specs/001-env-validation/tasks.md')
+          text = path.read_text()
+          for task in range(44, 47):
+              old = f'- [ ] T{task:03d}'
+              assert old in text
+              text = text.replace(old, f'- [X] T{task:03d}', 1)
+          for task in range(47, 51):
+              assert f'- [ ] T{task:03d}' in text
+          path.write_text(text)
+          PY
+          test ! -e .specify/extensions.yml
+          rm .github/workflows/us4-red.yml .github/workflows/us4-red-retry.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/cli.rs specs/001-env-validation/tasks.md .github/workflows/us4-red.yml .github/workflows/us4-red-retry.yml
+          git commit -m "test: define envcheck cli integration contract"
+          git push origin HEAD:chore/init-spec-kit
