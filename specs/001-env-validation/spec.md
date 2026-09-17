@@ -16,6 +16,7 @@
 - Q: Should variable names be compared case-sensitively across `.env`, `.env.example`, and `.env.schema`? → A: Yes. Variable names are case-sensitive on all supported platforms.
 - Q: Which representations should be accepted for `float` values? → A: Accept finite decimal and scientific-notation values; reject `NaN` and positive or negative infinity.
 - Q: Which variable names should be considered valid in `.env` and `.env.example`? → A: Names must match `[A-Za-z_][A-Za-z0-9_]*`; the same identifier rule applies to variable names declared by `.env.schema`.
+- Q: How should Envcheck interpret inline comments in unquoted dotenv values? → A: Outside quotes, `#` starts an inline comment only when preceded by whitespace; inside quotes, `#` is part of the value.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -53,6 +54,9 @@ missing keys and duplicate declarations are errors while target-only keys are wa
 8. **Given** a variable name starts with a digit or contains characters other than letters, digits,
    and `_`, **When** the file or schema is parsed, **Then** the identifier is rejected as invalid; a
    valid name starts with a letter or `_` and continues only with letters, digits, or `_`.
+9. **Given** an unquoted dotenv value is followed by whitespace and `#`, **When** the file is
+   parsed, **Then** the `#` and following text are treated as an inline comment; when `#` appears
+   inside quotes or inside an unquoted value without preceding whitespace, it remains part of the value.
 
 ---
 
@@ -161,6 +165,8 @@ the selected definition, diagnostic severity, and process success/failure semant
 - An optional schema variable is absent.
 - A required schema variable exists with an empty value.
 - A quoted value contains spaces, `#`, or `=` characters that are part of the value.
+- In an unquoted value, `#` starts an inline comment only when preceded by whitespace; otherwise
+  it remains part of the value.
 - A variable name occurs multiple times with different values; duplication remains an error.
 - Variable names that differ only by letter case, such as `PORT` and `port`, are distinct.
 - Variable names must match `[A-Za-z_][A-Za-z0-9_]*`; names such as `1PORT`, `APP-NAME`,
@@ -216,7 +222,9 @@ the selected definition, diagnostic severity, and process success/failure semant
 - **FR-014**: Duplicate declarations MUST NOT use first-value-wins or last-value-wins semantics for
   validation.
 - **FR-015**: Common single-quoted and double-quoted dotenv values MUST be interpreted without their
-  surrounding quote characters.
+  surrounding quote characters. Outside quotes, `#` MUST start an inline comment only when preceded
+  by whitespace. Inside quoted values, and in unquoted values where `#` is not preceded by whitespace,
+  `#` MUST be treated as part of the value.
 - **FR-016**: Common dotenv `export` prefixes MUST be accepted and the following name MUST be treated
   as the variable key.
 - **FR-017**: The command MUST NOT interpolate variable references or consult the machine's current
@@ -370,6 +378,8 @@ the selected definition, diagnostic severity, and process success/failure semant
 - Dotenv parsing follows common semantics for comments, blank lines, quoted values, and `export`
   prefixes, while interpolation is deliberately disabled. Non-empty, non-comment lines that are not
   valid dotenv declarations are errors rather than ignored input.
+- Inline dotenv comments start with `#` only outside quotes and only when preceded by whitespace;
+  otherwise `#` is preserved as part of the parsed value.
 - Environment variable identifiers use the portable form `[A-Za-z_][A-Za-z0-9_]*` across target,
   example, and schema definitions.
 - Exact numeric exit codes and exact command flag names are deferred to technical planning, provided
