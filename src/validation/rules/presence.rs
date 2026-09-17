@@ -256,3 +256,74 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod schema_tests {
+    use crate::env::EnvEntry;
+    use crate::validation::error::{RuleCode, Severity};
+
+    use super::validate_schema_presence;
+
+    fn entry(value: &str) -> EnvEntry {
+        EnvEntry {
+            key: "VALUE".to_owned(),
+            value: value.to_owned(),
+            line: 7,
+        }
+    }
+
+    fn has_error(result: &crate::validation::ValidationResult, code: RuleCode) -> bool {
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == Severity::Error && diagnostic.code == code)
+    }
+
+    #[test]
+    fn missing_required_variable_is_an_error_and_skips_value_rules() {
+        let (result, skip_value_rules) = validate_schema_presence("VALUE", None, true, false);
+
+        assert!(has_error(&result, RuleCode::MissingRequired));
+        assert!(skip_value_rules);
+    }
+
+    #[test]
+    fn missing_optional_variable_is_valid_and_skips_value_rules() {
+        let (result, skip_value_rules) = validate_schema_presence("VALUE", None, false, false);
+
+        assert!(!result.has_errors());
+        assert!(result.diagnostics.is_empty());
+        assert!(skip_value_rules);
+    }
+
+    #[test]
+    fn existing_empty_value_is_an_error_when_empty_is_not_allowed() {
+        let value = entry("");
+        let (result, skip_value_rules) =
+            validate_schema_presence("VALUE", Some(&value), true, false);
+
+        assert!(has_error(&result, RuleCode::EmptyNotAllowed));
+        assert!(skip_value_rules);
+    }
+
+    #[test]
+    fn existing_empty_value_is_valid_and_short_circuits_when_allowed() {
+        let value = entry("");
+        let (result, skip_value_rules) =
+            validate_schema_presence("VALUE", Some(&value), true, true);
+
+        assert!(!result.has_errors());
+        assert!(result.diagnostics.is_empty());
+        assert!(skip_value_rules);
+    }
+
+    #[test]
+    fn existing_non_empty_value_continues_to_type_and_value_rules() {
+        let value = entry("synthetic-non-empty");
+        let (result, skip_value_rules) =
+            validate_schema_presence("VALUE", Some(&value), true, true);
+
+        assert!(!result.has_errors());
+        assert!(!skip_value_rules);
+    }
+}

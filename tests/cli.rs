@@ -158,3 +158,375 @@ fn malformed_example_dotenv_exits_three_with_safe_file_context() {
     assert!(stderr.contains(":2"));
     assert_target_values_redacted(&output, &["synthetic-target-secret"]);
 }
+
+struct SchemaFixture {
+    _directory: TempDir,
+    target: PathBuf,
+    schema: PathBuf,
+}
+
+impl SchemaFixture {
+    fn new(target: &str, schema: &str) -> Self {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let target_path = directory.path().join(".env");
+        let schema_path = directory.path().join(".env.schema");
+        fs::write(&target_path, target).expect("write target dotenv");
+        fs::write(&schema_path, schema).expect("write env schema");
+        Self {
+            _directory: directory,
+            target: target_path,
+            schema: schema_path,
+        }
+    }
+}
+
+fn run_schema(target: &Path, schema: &Path) -> Output {
+    let mut command = Command::cargo_bin("envcheck").expect("compiled envcheck binary");
+    command.arg(target).arg("--schema").arg(schema);
+    command.output().expect("execute envcheck")
+}
+
+#[test]
+fn schema_complete_valid_contract_accepts_all_types_and_dotenv_forms() {
+    let fixture = SchemaFixture::new(
+        "APP_NAME=\"My Application\"\nAPP_PORT=65535\nREQUEST_TIMEOUT=1.5e1\nDEBUG=TrUe\nHOST=api.internal\nEMPTY_OK=\nLITERAL=${NAME}\nexport EXPORTED=enabled\n",
+        r#"
+version = 1
+
+[variables.APP_NAME]
+type = "string"
+required = true
+min_length = 2
+max_length = 20
+allowed = ["My Application"]
+
+[variables.APP_PORT]
+type = "integer"
+required = true
+min = 1
+max = 65535
+allowed = [65535]
+
+[variables.REQUEST_TIMEOUT]
+type = "float"
+required = true
+min = 0.1
+max = 60.0
+allowed = [15, 15.0]
+
+[variables.DEBUG]
+type = "boolean"
+required = true
+allowed = [true]
+
+[variables.HOST]
+type = "string"
+required = true
+pattern = "api\\.internal"
+
+[variables.EMPTY_OK]
+type = "integer"
+required = true
+allow_empty = true
+min = 10
+
+[variables.LITERAL]
+type = "string"
+required = true
+allowed = ["${NAME}"]
+
+[variables.EXPORTED]
+type = "string"
+required = true
+allowed = ["enabled"]
+
+[variables.OPTIONAL]
+type = "boolean"
+"#,
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("ok: environment validation succeeded"));
+    assert!(stderr(&output).is_empty());
+    assert_target_values_redacted(
+        &output,
+        &["My Application", "api.internal", "${NAME}", "enabled"],
+    );
+}
+
+#[test]
+fn schema_required_missing_is_a_validation_error() {
+    let fixture = SchemaFixture::new(
+        "",
+        r#"
+version = 1
+[variables.REQUIRED_VALUE]
+type = "string"
+required = true
+"#,
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("REQUIRED_VALUE"));
+    assert!(stdout(&output).contains("missing"));
+    assert!(stderr(&output).is_empty());
+}
+
+#[test]
+fn schema_existing_empty_is_distinct_and_rejected_when_not_allowed() {
+    let fixture = SchemaFixture::new(
+        "REQUIRED_VALUE=\n",
+        r#"
+version = 1
+[variables.REQUIRED_VALUE]
+type = "string"
+required = true
+allow_empty = false
+"#,
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("REQUIRED_VALUE"));
+    assert!(stdout(&output).contains("empty"));
+    assert!(stderr(&output).is_empty());
+}
+
+#[test]
+fn schema_optional_missing_variable_is_valid() {
+    let fixture = SchemaFixture::new(
+        "",
+        r#"
+version = 1
+[variables.OPTIONAL_VALUE]
+type = "integer"
+"#,
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("ok: environment validation succeeded"));
+}
+
+#[test]
+fn schema_integer_and_float_bounds_are_inclusive_and_reject_outside_values() {
+    let integer_schema = r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+required = true
+min = 10
+max = 20
+"#;
+    for value in ["10", "20"] {
+        let fixture = SchemaFixture::new(&format!("VALUE={value}\n"), integer_schema);
+        assert_eq!(
+            run_schema(&fixture.target, &fixture.schema).status.code(),
+            Some(0)
+        );
+    }
+    for value in ["9", "21"] {
+        let fixture = SchemaFixture::new(&format!("VALUE={value}\n"), integer_schema);
+        assert_eq!(
+            run_schema(&fixture.target, &fixture.schema).status.code(),
+            Some(1)
+        );
+    }
+
+    let float_schema = r#"
+version = 1
+[variables.VALUE]
+type = "float"
+required = true
+min = 0.5
+max = 1.5
+"#;
+    for value in ["0.5", "1.5"] {
+        let fixture = SchemaFixture::new(&format!("VALUE={value}\n"), float_schema);
+        assert_eq!(
+            run_schema(&fixture.target, &fixture.schema).status.code(),
+            Some(0)
+        );
+    }
+    for value in ["0.49", "1.51"] {
+        let fixture = SchemaFixture::new(&format!("VALUE={value}\n"), float_schema);
+        assert_eq!(
+            run_schema(&fixture.target, &fixture.schema).status.code(),
+            Some(1)
+        );
+    }
+}
+
+#[test]
+fn schema_unicode_scalar_lengths_enforce_exact_and_adjacent_boundaries() {
+    let schema = r#"
+version = 1
+[variables.TEXT]
+type = "string"
+required = true
+min_length = 2
+max_length = 2
+"#;
+
+    let exact = SchemaFixture::new("TEXT=é🦀\n", schema);
+    assert_eq!(
+        run_schema(&exact.target, &exact.schema).status.code(),
+        Some(0)
+    );
+
+    let below = SchemaFixture::new("TEXT=é\n", schema);
+    assert_eq!(
+        run_schema(&below.target, &below.schema).status.code(),
+        Some(1)
+    );
+
+    let above = SchemaFixture::new("TEXT=é🦀x\n", schema);
+    assert_eq!(
+        run_schema(&above.target, &above.schema).status.code(),
+        Some(1)
+    );
+}
+
+#[test]
+fn schema_typed_allowed_values_preserve_scalar_semantics() {
+    let schema = r#"
+version = 1
+[variables.MODE]
+type = "string"
+required = true
+allowed = ["prod"]
+
+[variables.BIG]
+type = "integer"
+required = true
+allowed = [9007199254740993]
+
+[variables.RATIO]
+type = "float"
+required = true
+allowed = [1, 2.5]
+
+[variables.ENABLED]
+type = "boolean"
+required = true
+allowed = [true]
+"#;
+
+    let valid = SchemaFixture::new(
+        "MODE=prod\nBIG=9007199254740993\nRATIO=1.0\nENABLED=TRUE\n",
+        schema,
+    );
+    assert_eq!(
+        run_schema(&valid.target, &valid.schema).status.code(),
+        Some(0)
+    );
+
+    let wrong_case = SchemaFixture::new(
+        "MODE=PROD\nBIG=9007199254740993\nRATIO=1.0\nENABLED=TRUE\n",
+        schema,
+    );
+    assert_eq!(
+        run_schema(&wrong_case.target, &wrong_case.schema)
+            .status
+            .code(),
+        Some(1)
+    );
+}
+
+#[test]
+fn schema_pattern_uses_regex_is_match_without_implicit_anchors() {
+    let unanchored = SchemaFixture::new(
+        "VALUE=concatenate\n",
+        r#"
+version = 1
+[variables.VALUE]
+type = "string"
+required = true
+pattern = "cat"
+"#,
+    );
+    assert_eq!(
+        run_schema(&unanchored.target, &unanchored.schema)
+            .status
+            .code(),
+        Some(0)
+    );
+
+    let anchored = SchemaFixture::new(
+        "VALUE=concatenate\n",
+        r#"
+version = 1
+[variables.VALUE]
+type = "string"
+required = true
+pattern = "^cat$"
+"#,
+    );
+    assert_eq!(
+        run_schema(&anchored.target, &anchored.schema).status.code(),
+        Some(1)
+    );
+}
+
+#[test]
+fn schema_additional_target_variable_warns_without_failing_or_disclosing_value() {
+    let fixture = SchemaFixture::new(
+        "KNOWN=synthetic-known\nEXTRA=synthetic-extra-secret\n",
+        r#"
+version = 1
+[variables.KNOWN]
+type = "string"
+required = true
+"#,
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("warning"));
+    assert!(stdout(&output).contains("EXTRA"));
+    assert_target_values_redacted(&output, &["synthetic-known", "synthetic-extra-secret"]);
+}
+
+#[test]
+fn schema_integer_outside_i64_range_is_rejected_without_value_disclosure() {
+    let fixture = SchemaFixture::new(
+        "VALUE=9223372036854775808\n",
+        r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+required = true
+"#,
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("VALUE"));
+    assert_target_values_redacted(&output, &["9223372036854775808"]);
+}
+
+#[test]
+fn schema_non_finite_and_overflowing_float_representations_are_rejected() {
+    let schema = r#"
+version = 1
+[variables.VALUE]
+type = "float"
+required = true
+"#;
+
+    for value in ["NaN", "+inf", "-inf", "1e400"] {
+        let fixture = SchemaFixture::new(&format!("VALUE={value}\n"), schema);
+        let output = run_schema(&fixture.target, &fixture.schema);
+        assert_eq!(output.status.code(), Some(1), "value {value} must fail");
+        assert!(stdout(&output).contains("VALUE"));
+        assert_target_values_redacted(&output, &[value]);
+    }
+}
