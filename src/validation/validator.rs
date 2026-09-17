@@ -18,10 +18,7 @@ pub(crate) fn validate_example(target: &EnvDocument, example: &EnvDocument) -> V
     result
 }
 
-pub(crate) fn validate_schema(
-    target: &EnvDocument,
-    schema: &SchemaDefinition,
-) -> ValidationResult {
+pub(crate) fn validate_schema(target: &EnvDocument, schema: &SchemaDefinition) -> ValidationResult {
     let mut diagnostics = Vec::new();
 
     add_target_duplicate_diagnostics(target, &mut diagnostics);
