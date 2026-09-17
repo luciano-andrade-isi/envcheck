@@ -38,19 +38,19 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Tests for shared foundations
 
-- [ ] T003 [P] Add dotenv parser characterization tests covering blank/comment lines, single/double quotes, `export`, CRLF, empty values, literal `${NAME}`, duplicate preservation, invalid non-comment lines, `[A-Za-z_][A-Za-z0-9_]*` names, case sensitivity, and inline `#` semantics in `src/env/parser.rs`
+- [ ] T003 [P] Add dotenv parser characterization tests covering blank/comment lines, single/double quotes, `export`, CRLF, empty values, literal `${NAME}`, duplicate preservation, invalid non-comment lines, `[A-Za-z_][A-Za-z0-9_]*` names, case sensitivity, inline `#` semantics, and preservation of the known source line for Envcheck-detected malformed dotenv input without exposing parsed values in `src/env/parser.rs`
 - [ ] T004 [P] Add unit tests for canonical diagnostic ordering (`Error` before `Warning`, then variable name, rule code, line) and warning-only `has_errors() == false` semantics in `src/validation/mod.rs`
 - [ ] T005 [P] Add CLI-argument unit tests for required `<ENV_FILE>` and mutual exclusion of `--example`/`--schema` in `src/cli.rs`
 
 ### Shared implementation
 
 - [ ] T006 Implement `EnvEntry { key, value, line }` and `EnvDocument { path, entries, key_index }` in `src/env/mod.rs`, preserving duplicate multiplicity and keeping raw values out of user-visible diagnostic types
-- [ ] T007 Implement the narrow dotenv parsing adapter over the non-expanding `dotenvx_primitives::scan` API in `src/env/parser.rs`, enforcing invalid-line failure, `[A-Za-z_][A-Za-z0-9_]*`, case sensitivity, no interpolation/environment lookup, quoted values, `export`, CRLF, and clarified inline-comment behavior
+- [ ] T007 Implement the narrow dotenv parsing adapter over the non-expanding `dotenvx_primitives::scan` API in `src/env/parser.rs`, enforcing invalid-line failure, `[A-Za-z_][A-Za-z0-9_]*`, case sensitivity, no interpolation/environment lookup, quoted values, `export`, CRLF, and clarified inline-comment behavior; preserve source path plus parser-provided location when available, and retain the known line number when Envcheck itself rejects a malformed dotenv line, without placing raw target values in the error representation
 - [ ] T008 [P] Define `Severity`, stable `RuleCode` values (`duplicate_key`, `missing_required`, `empty_not_allowed`, `type_mismatch`, `below_min`, `above_max`, `too_short`, `too_long`, `not_allowed`, `pattern_mismatch`, `additional_variable`), and value-redacted `Diagnostic` fields in `src/validation/error.rs`
 - [ ] T009 Implement `ValidationResult { diagnostics }`, `has_errors()`, and deterministic diagnostic sorting in `src/validation/mod.rs`
 - [ ] T010 [P] Implement the clap derive argument model for `envcheck <ENV_FILE> [--example <FILE> | --schema <FILE>]` using `PathBuf` and mutually exclusive validator flags in `src/cli.rs`
-- [ ] T011 [P] Implement centralized rendering primitives for `error`, `warning`, and final `ok` summaries without accepting raw target values in `src/output/mod.rs`
-- [ ] T012 Create the orchestration shell and stable exit-code constants (`0` success/warnings, `1` validation errors, `2` CLI usage, `3` input/discovery/dotenv failure, `4` schema failure) without story-specific validator selection logic in `src/main.rs`
+- [ ] T011 [P] Implement centralized rendering primitives for `error`, `warning`, final `ok` summaries, and structured preventing failures, rendering preventing failures to stderr from safe category/path/reason/optional-line/optional-column fields without accepting raw target values in `src/output/mod.rs`
+- [ ] T012 Create the orchestration shell and stable exit-code constants (`0` success/warnings, `1` validation errors, `2` CLI usage, `3` input/discovery/dotenv failure, `4` schema failure) in `src/main.rs`, including a structured application-level preventing-error representation with failure category, affected `PathBuf`, safe reason, optional line, and optional column, and no field capable of carrying a raw target value; do not add story-specific validator selection logic yet
 
 **Checkpoint**: Shared parser, domain diagnostic structures, CLI argument shape, output primitives, and exit-code constants are ready.
 
@@ -65,13 +65,13 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 ### Tests for User Story 1
 
 - [ ] T013 [P] [US1] Add unit tests for example comparison covering missing keys, reordered keys, ignored example values, duplicate keys in target/example, empty example file, case-sensitive key matching, and target-only warnings in `src/validation/rules/presence.rs`
-- [ ] T014 [US1] Add compiled-CLI integration tests for explicit `--example` success, missing `REDIS_URL` exit `1`, duplicate declaration exit `1`, warning-only exit `0`, malformed dotenv exit `3`, and absence of target values from diagnostics in `tests/cli.rs`
+- [ ] T014 [US1] Add compiled-CLI integration tests for explicit `--example` success, missing `REDIS_URL` exit `1`, duplicate declaration exit `1`, warning-only exit `0`, malformed target dotenv exit `3`, and malformed example dotenv exit `3`; for preventing parse failures assert stderr includes the affected path, a safe reason, and the known line when available, and assert actual target values appear in neither stdout nor stderr in `tests/cli.rs`
 
 ### Implementation for User Story 1
 
 - [ ] T015 [US1] Implement example-presence rules in `src/validation/rules/presence.rs`: every example key must exist, example values are ignored, key order is irrelevant, duplicates in either document are errors, and target-only keys are `additional_variable` warnings
 - [ ] T016 [US1] Implement example-file validation orchestration and structured diagnostics in `src/validation/validator.rs` using only `EnvDocument` inputs and returning `ValidationResult`
-- [ ] T017 [US1] Wire explicit `--example` file reading/parsing, example validation, stdout rendering for completed validation, stderr rendering for preventing failures, and exit `0`/`1`/`3` mapping in `src/main.rs`
+- [ ] T017 [US1] Wire explicit `--example` file reading/parsing, example validation, stdout rendering for completed validation, and structured preventing failures for unreadable/malformed target or example files to stderr with exit `3`, preserving affected path, safe reason, and available source location without target-value disclosure in `src/main.rs`
 
 **Checkpoint**: Explicit `.env.example` comparison is fully functional and independently testable.
 
@@ -87,22 +87,22 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 - [ ] T018 [P] [US2] Add schema-model deserialization tests for `SchemaDefinition`, `VariableRule`, `VariableType`, and `SchemaScalar`, including defaults `required = false` and `allow_empty = false`, in `src/schema/model.rs`
 - [ ] T019 [P] [US2] Add presence/empty-state unit tests proving: absent + `required = true` is an error; absent + `required = false` is valid; existing empty + `allow_empty = false` is an error; existing empty + `allow_empty = true` is accepted and skips all type/value constraints in `src/validation/rules/presence.rs`
-- [ ] T020 [P] [US2] Add scalar type tests for string parsing, signed integers, finite decimal/scientific floats, rejection of integer floating notation, rejection of `NaN`/infinities, and case-insensitive `true`/`false` with rejection of `1`, `0`, `yes`, `no`, `on`, `off` in `src/validation/rules/value_type.rs`
-- [ ] T021 [P] [US2] Add inclusive numeric boundary tests for integer/float `min` and `max`, including exact-boundary, just-below, and just-above values, in `src/validation/rules/numeric.rs`
+- [ ] T020 [P] [US2] Add scalar type tests in `src/validation/rules/value_type.rs` covering Rust `i64` integer semantics (`i64::MIN` and `i64::MAX` accepted, below-minimum and above-maximum representations rejected, decimal and scientific notation rejected for integer variables) and Rust `f64` float semantics (finite decimal and finite scientific notation accepted; `NaN`, positive infinity, negative infinity, and overflow/non-finite parse results rejected), plus string parsing and case-insensitive `true`/`false` with rejection of `1`, `0`, `yes`, `no`, `on`, `off`
+- [ ] T021 [P] [US2] Add inclusive numeric boundary tests for integer/float `min` and `max`, including exact-boundary, just-below, and just-above values, preserving integer comparisons as `i64` and float comparisons as finite `f64` without routing integer comparison through `f64`, in `src/validation/rules/numeric.rs`
 - [ ] T022 [P] [US2] Add string length tests using Unicode scalar-value counting, inclusive `min_length`/`max_length`, and exact-boundary/one-character-outside cases in `src/validation/rules/length.rs`
-- [ ] T023 [P] [US2] Add typed `allowed` tests for case-sensitive strings, numeric equality, and boolean meaning in `src/validation/rules/allowed.rs`
+- [ ] T023 [P] [US2] Add typed `allowed` tests in `src/validation/rules/allowed.rs` covering case-sensitive TOML strings, TOML integer/`i64` equality without `f64` coercion, finite-`f64` numeric equality including compatible finite TOML integer values for float rules, and TOML boolean meaning; verify incompatible scalar kinds are not silently coerced
 - [ ] T024 [P] [US2] Add `pattern` tests using Rust `regex::Regex::is_match` semantics with no implicit anchors in `src/validation/rules/pattern.rs`
-- [ ] T025 [US2] Add compiled-CLI integration tests for explicit `--schema` validation covering all four types, required/optional behavior, `allow_empty`, inclusive numeric bounds, string lengths, typed `allowed`, patterns, additional-variable warnings, quoted values, `export`, and literal `${NAME}` in `tests/cli.rs`
+- [ ] T025 [US2] Add compiled-CLI integration tests for explicit `--schema` validation covering all four types, required/optional behavior, `allow_empty`, inclusive numeric bounds, string lengths, typed `allowed`, patterns, additional-variable warnings, quoted values, `export`, and literal `${NAME}`; include representative rejection of an integer outside the `i64` range and a float representation that overflows to a non-finite `f64` in `tests/cli.rs`
 
 ### Implementation for User Story 2
 
 - [ ] T026 [P] [US2] Implement `SchemaDefinition { version: u32, variables: BTreeMap<String, VariableRule> }`, `VariableType::{String,Integer,Float,Boolean}`, `VariableRule` fields, and `SchemaScalar::{String,Integer,Float,Boolean}` with defaults in `src/schema/model.rs`; preserve TOML scalar kinds so constraint values are not silently coerced
-- [ ] T027 [US2] Implement valid-schema TOML deserialization and variable-name checking in `src/schema/parser.rs`, producing a usable version-1 schema for compatible inputs without consulting external state
+- [ ] T027 [US2] Implement valid-schema TOML deserialization and variable-name checking in `src/schema/parser.rs`, producing a usable version-1 schema for compatible inputs without consulting external state; preserve safe TOML parser location metadata in structured parse failures when available
 - [ ] T028 [P] [US2] Extend presence logic for schema `required`/`allow_empty` semantics in `src/validation/rules/presence.rs`, with `allow_empty = true` short-circuiting type/value-specific rules for an existing empty value
-- [ ] T029 [P] [US2] Implement declared scalar conversion and type-mismatch diagnostics in `src/validation/rules/value_type.rs`: strings use parsed dotenv text; integers use signed integer representation; floats accept finite decimal/scientific forms; booleans accept only case-insensitive `true`/`false`
-- [ ] T030 [P] [US2] Implement inclusive integer/float `min` and `max` validation in `src/validation/rules/numeric.rs`
+- [ ] T029 [P] [US2] Implement declared scalar conversion and type-mismatch diagnostics in `src/validation/rules/value_type.rs`: strings use parsed dotenv text; integers parse directly to Rust `i64`, must fit `i64::MIN..=i64::MAX`, reject decimal/scientific syntax and overflow/underflow, and MUST NOT use `f64` coercion; floats parse to Rust `f64`, accept finite decimal/scientific forms only, and reject `NaN`, infinities, and overflow/non-finite results; booleans accept only case-insensitive `true`/`false`
+- [ ] T030 [P] [US2] Implement inclusive integer/float `min` and `max` validation in `src/validation/rules/numeric.rs`, preserving integer bounds/comparison as `i64` and float bounds/comparison as finite `f64` without coercing integer validation through `f64`
 - [ ] T031 [P] [US2] Implement string `min_length`/`max_length` validation using Unicode scalar values (`chars().count()`) in `src/validation/rules/length.rs`
-- [ ] T032 [P] [US2] Implement typed finite-set `allowed` comparison for string/integer/float/boolean values in `src/validation/rules/allowed.rs`, with string equality case-sensitive
+- [ ] T032 [P] [US2] Implement typed finite-set `allowed` comparison for string/integer/float/boolean values in `src/validation/rules/allowed.rs`: integer values and integer-rule entries remain `i64` with no `f64` coercion; float values use finite `f64` semantics and may compare against compatible finite TOML integer or float entries; string equality remains case-sensitive and incompatible scalar kinds are never implicitly coerced
 - [ ] T033 [P] [US2] Implement string `pattern` evaluation with `regex::Regex::is_match` and no implicit anchors in `src/validation/rules/pattern.rs`
 - [ ] T034 [US2] Implement schema-based target validation orchestration in `src/validation/validator.rs`: duplicate target keys, presence/empty handling, scalar conversion, applicable constraints, target-only warnings, structured safe diagnostics, and deterministic sorting
 - [ ] T035 [US2] Wire explicit `--schema` reading/parsing/validation into `src/main.rs`, using stdout for completed validation and exit `0`/`1` while reserving schema-definition failures for exit `4`
@@ -119,17 +119,17 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Tests for User Story 3
 
-- [ ] T036 [P] [US3] Add schema syntax/strictness tests for malformed TOML, unknown top-level fields, unknown variable-rule fields, missing required schema structure, unsupported types, and unsupported version in `src/schema/parser.rs`
-- [ ] T037 [P] [US3] Add semantic schema tests for incompatible constraints, wrong constraint scalar kinds, `min > max`, `min_length > max_length`, incompatible typed `allowed` entries, invalid variable identifiers, and non-finite float constraints in `src/schema/parser.rs`
+- [ ] T036 [P] [US3] Add schema syntax/strictness tests for malformed TOML, unknown top-level fields, unknown variable-rule fields, missing required schema structure, unsupported types, and unsupported version in `src/schema/parser.rs`; malformed TOML failures must retain the affected schema path, a safe reason, and parser-provided line/column when available, without carrying target values
+- [ ] T037 [P] [US3] Add semantic schema tests for incompatible constraints, wrong constraint scalar kinds, `min > max`, `min_length > max_length`, incompatible typed `allowed` entries (including explicit rejection of coercion between string/integer/float/boolean kinds), invalid variable identifiers, and non-finite float constraints in `src/schema/parser.rs`
 - [ ] T038 [P] [US3] Add invalid-regex schema tests proving regex compilation failure is a schema error rather than a target validation error in `src/validation/rules/pattern.rs`
-- [ ] T039 [US3] Add compiled-CLI integration tests for malformed TOML, unknown properties, unsupported version, incompatible constraints, contradictory bounds, incompatible `allowed`, and invalid regex, all producing exit `4` with stderr output and no target-value disclosure in `tests/cli.rs`
+- [ ] T039 [US3] Add compiled-CLI integration tests for malformed TOML and invalid schema definitions including unknown properties, unsupported version, incompatible constraints, contradictory bounds, incompatible `allowed`, and invalid regex; assert exit `4`, stderr contains the affected schema path and a safe reason plus line/column when supplied by the parser, and actual target values appear in neither stdout nor stderr in `tests/cli.rs`
 
 ### Implementation for User Story 3
 
 - [ ] T040 [US3] Apply strict Serde deserialization (`deny_unknown_fields`) to top-level schema and variable-rule structures in `src/schema/model.rs`
-- [ ] T041 [US3] Implement complete schema semantic validation in `src/schema/parser.rs`: version must equal `1`; names match `[A-Za-z_][A-Za-z0-9_]*`; `min`/`max` only integer/float; `min_length`/`max_length` only string and non-negative whole numbers; `pattern` only string; every `allowed` item is type-compatible; and contradictory bounds invalidate the whole schema
+- [ ] T041 [US3] Implement complete schema semantic validation in `src/schema/parser.rs`: version must equal `1`; names match `[A-Za-z_][A-Za-z0-9_]*`; `min`/`max` only integer/float; `min_length`/`max_length` only string and non-negative whole numbers; `pattern` only string; every `allowed` item is type-compatible with no implicit scalar coercion; contradictory bounds invalidate the whole schema; schema-definition failures must retain affected path, safe reason, and any available parser location without target-value data
 - [ ] T042 [US3] Compile schema regex constraints during semantic schema validation and return a schema-definition failure for invalid patterns in `src/schema/parser.rs` while keeping runtime matching in `src/validation/rules/pattern.rs`
-- [ ] T043 [US3] Map malformed or semantically invalid schema failures to stable exit code `4` and stderr in `src/main.rs`, ensuring target validation does not proceed after schema failure
+- [ ] T043 [US3] Map malformed or semantically invalid schema failures to the structured preventing-error representation, preserving schema path, safe reason, and available line/column, render them to stderr with stable exit code `4`, and ensure target validation does not proceed or expose target values in `src/main.rs`
 
 **Checkpoint**: Invalid validation definitions fail explicitly and cannot silently weaken validation.
 
@@ -143,15 +143,15 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Tests for User Story 4
 
-- [ ] T044 [US4] Add compiled-CLI tests for automatic discovery beside `<ENV_FILE>` (`.env.schema` before `.env.example`), explicit-path override, no-definition exit `3`, unreadable-file exit `3`, and mutually exclusive flags exit `2` in `tests/cli.rs`
-- [ ] T045 [US4] Add compiled-CLI tests asserting stdout is used for completed validation, stderr for preventing failures, warnings alone exit `0`, validation errors exit `1`, schema failures exit `4`, and actual target environment values never appear in either stream in `tests/cli.rs`
+- [ ] T044 [US4] Add compiled-CLI tests for automatic discovery beside `<ENV_FILE>` (`.env.schema` before `.env.example`), explicit-path override, no-definition exit `3`, unreadable target/example/schema file exit `3`, and mutually exclusive flags exit `2`; unreadable-file diagnostics must identify the affected path and a safe reason on stderr in `tests/cli.rs`
+- [ ] T045 [US4] Add compiled-CLI tests asserting stdout is used for completed validation and stderr for preventing failures; representative dotenv parse, unreadable-file, TOML parse, and schema-definition failures must render structured safe file context (path, safe reason, optional line/column when available), warnings alone exit `0`, validation errors exit `1`, schema failures exit `4`, and actual target environment values never appear in either stream in `tests/cli.rs`
 - [ ] T046 [US4] Add deterministic-output integration coverage by running the same representative validation exactly 100 times and asserting identical exit code, stdout, stderr, diagnostic content, and diagnostic order across all runs in `tests/cli.rs`
 
 ### Implementation for User Story 4
 
 - [ ] T047 [US4] Implement validator-definition resolution relative to the target file directory in `src/main.rs`: explicit `--schema`/`--example` override discovery; otherwise choose sibling `.env.schema`, then sibling `.env.example`, otherwise return input/discovery failure
-- [ ] T048 [US4] Complete application-level error classification and stable exit mapping in `src/main.rs`: clap usage `2`, file/discovery/dotenv prevention `3`, schema-definition prevention `4`, completed validation errors `1`, success/warnings `0`
-- [ ] T049 [US4] Finalize safe deterministic rendering in `src/output/mod.rs`: errors before warnings, variable name ascending, rule code ascending, line tie-breaker, then final success/summary line; do not accept or render actual target values
+- [ ] T048 [US4] Complete application-level preventing-error classification and stable exit mapping in `src/main.rs`: clap usage `2`, unreadable file/discovery/dotenv prevention `3`, schema parse/definition prevention `4`, completed validation errors `1`, success/warnings `0`; every file/input/schema preventing error must carry category, affected path, safe reason, optional line, and optional column, with parser location preserved when available and no raw target value field
+- [ ] T049 [US4] Finalize safe deterministic rendering in `src/output/mod.rs`: completed-validation errors before warnings, variable name ascending, rule code ascending, line tie-breaker, then final success/summary line; preventing failures render their safe category/path/reason/optional-line/optional-column context to stderr, and no rendering path accepts or emits actual target values
 - [ ] T050 [US4] Complete orchestration in `src/main.rs` so file reads are read-only, all validation remains local/in-memory, no networking/remote schemas/secret managers/environment interpolation are invoked, and the domain validator stays independent of clap/output
 
 **Checkpoint**: The complete MVP CLI contract is deterministic, automation-safe, read-only, and value-redacted.
