@@ -1,8 +1,10 @@
 name: US3 Green
 on:
   push:
-    branches: [chore/init-spec-kit]
-    paths: ['.github/workflows/us3-green.yml']
+    branches:
+      - chore/init-spec-kit
+    paths:
+      - .github/workflows/us3-green.yml
 permissions:
   contents: write
 jobs:
@@ -19,358 +21,32 @@ jobs:
           set -euo pipefail
           test ! -e .specify/extensions.yml
           bash .specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          for path in sorted(Path('specs/001-env-validation/checklists').glob('*.md')):
-              text = path.read_text()
-              total = len(re.findall(r'^- \[(?: |X|x)\] ', text, flags=re.M))
-              checked = len(re.findall(r'^- \[(?:X|x)\] ', text, flags=re.M))
-              unchecked = len(re.findall(r'^- \[ \] ', text, flags=re.M))
-              print(f'{path.name}: total={total} checked={checked} unchecked={unchecked}')
-              assert unchecked == 0
-          tasks = Path('specs/001-env-validation/tasks.md').read_text()
-          for task in range(1, 40):
-              assert f'- [X] T{task:03d}' in tasks
-          for task in range(40, 44):
-              assert f'- [ ] T{task:03d}' in tasks
-          PY
+          python3 -c "from pathlib import Path; import re; files=list(Path('specs/001-env-validation/checklists').glob('*.md')); assert all(not re.findall(r'^- \[ \] ', p.read_text(), flags=re.M) for p in files)"
+          python3 -c "from pathlib import Path; t=Path('specs/001-env-validation/tasks.md').read_text(); assert all(f'- [X] T{i:03d}' in t for i in range(1,40)); assert all(f'- [ ] T{i:03d}' in t for i in range(40,44))"
       - name: Implement T040-T043
+        env:
+          PARSER_PREFIX_B64: dXNlIHN0ZDo6cGF0aDo6e1BhdGgsIFBhdGhCdWZ9OwoKdXNlIHJlZ2V4OjpSZWdleDsKCnVzZSBzdXBlcjo6bW9kZWw6OntTY2hlbWFEZWZpbml0aW9uLCBTY2hlbWFTY2FsYXIsIFZhcmlhYmxlUnVsZSwgVmFyaWFibGVUeXBlfTsKCiNbZGVyaXZlKENsb25lLCBDb3B5LCBEZWJ1ZywgRXEsIFBhcnRpYWxFcSldCnB1YihjcmF0ZSkgZW51bSBTY2hlbWFFcnJvcktpbmQgewogICAgU3ludGF4LAogICAgRGVmaW5pdGlvbiwKfQoKI1tkZXJpdmUoQ2xvbmUsIERlYnVnLCBFcSwgUGFydGlhbEVxKV0KcHViKGNyYXRlKSBzdHJ1Y3QgU2NoZW1hUGFyc2VFcnJvciB7CiAgICBwdWIoY3JhdGUpIGtpbmQ6IFNjaGVtYUVycm9yS2luZCwKICAgIHB1YihjcmF0ZSkgcGF0aDogUGF0aEJ1ZiwKICAgIHB1YihjcmF0ZSkgcmVhc29uOiBTdHJpbmcsCiAgICBwdWIoY3JhdGUpIGxpbmU6IE9wdGlvbjx1c2l6ZT4sCiAgICBwdWIoY3JhdGUpIGNvbHVtbjogT3B0aW9uPHVzaXplPiwKfQoKcHViKGNyYXRlKSBmbiBwYXJzZV9zY2hlbWEocGF0aDogJlBhdGgsIGlucHV0OiAmc3RyKSAtPiBSZXN1bHQ8U2NoZW1hRGVmaW5pdGlvbiwgU2NoZW1hUGFyc2VFcnJvcj4gewogICAgdG9tbDo6ZnJvbV9zdHI6Ojx0b21sOjpWYWx1ZT4oaW5wdXQpLm1hcF9lcnIofGVycm9yfCBzeW50YXhfZXJyb3IocGF0aCwgaW5wdXQsICZlcnJvcikpPzsKCiAgICBsZXQgc2NoZW1hID0gdG9tbDo6ZnJvbV9zdHI6OjxTY2hlbWFEZWZpbml0aW9uPihpbnB1dCkKICAgICAgICAubWFwX2Vycih8ZXJyb3J8IGRlZmluaXRpb25fZGVzZXJpYWxpemF0aW9uX2Vycm9yKHBhdGgsIGlucHV0LCAmZXJyb3IpKT87CgogICAgdmFsaWRhdGVfc2NoZW1hX2RlZmluaXRpb24ocGF0aCwgJnNjaGVtYSk/OwogICAgT2soc2NoZW1hKQp9CgpmbiB2YWxpZGF0ZV9zY2hlbWFfZGVmaW5pdGlvbigKICAgIHBhdGg6ICZQYXRoLAogICAgc2NoZW1hOiAmU2NoZW1hRGVmaW5pdGlvbiwKKSAtPiBSZXN1bHQ8KCksIFNjaGVtYVBhcnNlRXJyb3I+IHsKICAgIGlmIHNjaGVtYS52ZXJzaW9uICE9IDEgewogICAgICAgIHJldHVybiBFcnIoZGVmaW5pdGlvbl9lcnJvcihwYXRoLCAidW5zdXBwb3J0ZWQgc2NoZW1hIHZlcnNpb24iKSk7CiAgICB9CgogICAgZm9yICh2YXJpYWJsZSwgcnVsZSkgaW4gJnNjaGVtYS52YXJpYWJsZXMgewogICAgICAgIGlmICFpc192YWxpZF92YXJpYWJsZV9uYW1lKHZhcmlhYmxlKSB7CiAgICAgICAgICAgIHJldHVybiBFcnIoZGVmaW5pdGlvbl9lcnJvcigKICAgICAgICAgICAgICAgIHBhdGgsCiAgICAgICAgICAgICAgICBmb3JtYXQhKCJpbnZhbGlkIHZhcmlhYmxlIG5hbWUgYHt2YXJpYWJsZX1gIiksCiAgICAgICAgICAgICkpOwogICAgICAgIH0KICAgICAgICB2YWxpZGF0ZV9ydWxlKHBhdGgsIHZhcmlhYmxlLCBydWxlKT87CiAgICB9CgogICAgT2soKCkpCn0KCmZuIHZhbGlkYXRlX3J1bGUocGF0aDogJlBhdGgsIHZhcmlhYmxlOiAmc3RyLCBydWxlOiAmVmFyaWFibGVSdWxlKSAtPiBSZXN1bHQ8KCksIFNjaGVtYVBhcnNlRXJyb3I+IHsKICAgIG1hdGNoIHJ1bGUuciN0eXBlIHsKICAgICAgICBWYXJpYWJsZVR5cGU6OlN0cmluZyA9PiB2YWxpZGF0ZV9zdHJpbmdfcnVsZShwYXRoLCB2YXJpYWJsZSwgcnVsZSk/LAogICAgICAgIFZhcmlhYmxlVHlwZTo6SW50ZWdlciA9PiB2YWxpZGF0ZV9pbnRlZ2VyX3J1bGUocGF0aCwgdmFyaWFibGUsIHJ1bGUpPywKICAgICAgICBWYXJpYWJsZVR5cGU6OkZsb2F0ID0+IHZhbGlkYXRlX2Zsb2F0X3J1bGUocGF0aCwgdmFyaWFibGUsIHJ1bGUpPywKICAgICAgICBWYXJpYWJsZVR5cGU6OkJvb2xlYW4gPT4gdmFsaWRhdGVfYm9vbGVhbl9ydWxlKHBhdGgsIHZhcmlhYmxlLCBydWxlKT8sCiAgICB9CgogICAgaWYgbGV0IFNvbWUoYWxsb3dlZCkgPSBydWxlLmFsbG93ZWQuYXNfZGVyZWYoKSB7CiAgICAgICAgZm9yIGl0ZW0gaW4gYWxsb3dlZCB7CiAgICAgICAgICAgIGxldCBjb21wYXRpYmxlID0gbWF0Y2ggcnVsZS5yI3R5cGUgewogICAgICAgICAgICAgICAgVmFyaWFibGVUeXBlOjpTdHJpbmcgPT4gbWF0Y2hlcyEoaXRlbSwgU2NoZW1hU2NhbGFyOjpTdHJpbmcoXykpLAogICAgICAgICAgICAgICAgVmFyaWFibGVUeXBlOjpJbnRlZ2VyID0+IG1hdGNoZXMhKGl0ZW0sIFNjaGVtYVNjYWxhcjo6SW50ZWdlcihfKSksCiAgICAgICAgICAgICAgICBWYXJpYWJsZVR5cGU6OkZsb2F0ID0+IG1hdGNoIGl0ZW0gewogICAgICAgICAgICAgICAgICAgIFNjaGVtYVNjYWxhcjo6SW50ZWdlcihfKSA9PiB0cnVlLAogICAgICAgICAgICAgICAgICAgIFNjaGVtYVNjYWxhcjo6RmxvYXQodmFsdWUpID0+IHZhbHVlLmlzX2Zpbml0ZSgpLAogICAgICAgICAgICAgICAgICAgIF8gPT4gZmFsc2UsCiAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgVmFyaWFibGVUeXBlOjpCb29sZWFuID0+IG1hdGNoZXMhKGl0ZW0sIFNjaGVtYVNjYWxhcjo6Qm9vbGVhbihfKSksCiAgICAgICAgICAgIH07CiAgICAgICAgICAgIGlmICFjb21wYXRpYmxlIHsKICAgICAgICAgICAgICAgIHJldHVybiBFcnIoZGVmaW5pdGlvbl9lcnJvcigKICAgICAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgICAgIGZvcm1hdCEoImluY29tcGF0aWJsZSBhbGxvd2VkIGVudHJ5IGZvciBge3ZhcmlhYmxlfWAiKSwKICAgICAgICAgICAgICAgICkpOwogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQoKICAgIE9rKCgpKQp9CgpmbiB2YWxpZGF0ZV9zdHJpbmdfcnVsZSgKICAgIHBhdGg6ICZQYXRoLAogICAgdmFyaWFibGU6ICZzdHIsCiAgICBydWxlOiAmVmFyaWFibGVSdWxlLAopIC0+IFJlc3VsdDwoKSwgU2NoZW1hUGFyc2VFcnJvcj4gewogICAgaWYgcnVsZS5taW4uaXNfc29tZSgpIHx8IHJ1bGUubWF4LmlzX3NvbWUoKSB7CiAgICAgICAgcmV0dXJuIEVycihpbmNvbXBhdGlibGVfY29uc3RyYWludChwYXRoLCB2YXJpYWJsZSwgIm1pbi9tYXgiKSk7CiAgICB9CiAgICBpZiBsZXQgKFNvbWUobWluKSwgU29tZShtYXgpKSA9IChydWxlLm1pbl9sZW5ndGgsIHJ1bGUubWF4X2xlbmd0aCkKICAgICAgICAmJiBtaW4gPiBtYXgKICAgIHsKICAgICAgICByZXR1cm4gRXJyKGRlZmluaXRpb25fZXJyb3IoCiAgICAgICAgICAgIHBhdGgsCiAgICAgICAgICAgIGZvcm1hdCEoIm1pbl9sZW5ndGggZXhjZWVkcyBtYXhfbGVuZ3RoIGZvciBge3ZhcmlhYmxlfWAiKSwKICAgICAgICApKTsKICAgIH0KICAgIGlmIGxldCBTb21lKHBhdHRlcm4pID0gcnVsZS5wYXR0ZXJuLmFzX2RlcmVmKCkKICAgICAgICAmJiBSZWdleDo6bmV3KHBhdHRlcm4pLmlzX2VycigpCiAgICB7CiAgICAgICAgcmV0dXJuIEVycihkZWZpbml0aW9uX2Vycm9yKAogICAgICAgICAgICBwYXRoLAogICAgICAgICAgICBmb3JtYXQhKCJpbnZhbGlkIHJlZ2V4IHBhdHRlcm4gZm9yIGB7dmFyaWFibGV9YCIpLAogICAgICAgICkpOwogICAgfQogICAgT2soKCkpCn0KCmZuIHZhbGlkYXRlX2ludGVnZXJfcnVsZSgKICAgIHBhdGg6ICZQYXRoLAogICAgdmFyaWFibGU6ICZzdHIsCiAgICBydWxlOiAmVmFyaWFibGVSdWxlLAopIC0+IFJlc3VsdDwoKSwgU2NoZW1hUGFyc2VFcnJvcj4gewogICAgaWYgcnVsZS5taW5fbGVuZ3RoLmlzX3NvbWUoKSB8fCBydWxlLm1heF9sZW5ndGguaXNfc29tZSgpIHx8IHJ1bGUucGF0dGVybi5pc19zb21lKCkgewogICAgICAgIHJldHVybiBFcnIoaW5jb21wYXRpYmxlX2NvbnN0cmFpbnQocGF0aCwgdmFyaWFibGUsICJzdHJpbmcgY29uc3RyYWludCIpKTsKICAgIH0KCiAgICBsZXQgbWluID0gbWF0Y2ggcnVsZS5taW4uYXNfcmVmKCkgewogICAgICAgIFNvbWUoU2NoZW1hU2NhbGFyOjpJbnRlZ2VyKHZhbHVlKSkgPT4gU29tZSgqdmFsdWUpLAogICAgICAgIFNvbWUoXykgPT4gewogICAgICAgICAgICByZXR1cm4gRXJyKGRlZmluaXRpb25fZXJyb3IoCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgZm9ybWF0ISgiaW50ZWdlciBtaW4gaGFzIGluY29tcGF0aWJsZSBzY2FsYXIgdHlwZSBmb3IgYHt2YXJpYWJsZX1gIiksCiAgICAgICAgICAgICkpOwogICAgICAgIH0KICAgICAgICBOb25lID0+IE5vbmUsCiAgICB9OwogICAgbGV0IG1heCA9IG1hdGNoIHJ1bGUubWF4LmFzX3JlZigpIHsKICAgICAgICBTb21lKFNjaGVtYVNjYWxhcjo6SW50ZWdlcih2YWx1ZSkpID0+IFNvbWUoKnZhbHVlKSwKICAgICAgICBTb21lKF8pID0+IHsKICAgICAgICAgICAgcmV0dXJuIEVycihkZWZpbml0aW9uX2Vycm9yKAogICAgICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgICAgIGZvcm1hdCEoImludGVnZXIgbWF4IGhhcyBpbmNvbXBhdGlibGUgc2NhbGFyIHR5cGUgZm9yIGB7dmFyaWFibGV9YCIpLAogICAgICAgICAgICApKTsKICAgICAgICB9CiAgICAgICAgTm9uZSA9PiBOb25lLAogICAgfTsKICAgIGlmIGxldCAoU29tZShtaW4pLCBTb21lKG1heCkpID0gKG1pbiwgbWF4KQogICAgICAgICYmIG1pbiA+IG1heAogICAgewogICAgICAgIHJldHVybiBFcnIoZGVmaW5pdGlvbl9lcnJvcigKICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgZm9ybWF0ISgibWluIGV4Y2VlZHMgbWF4IGZvciBge3ZhcmlhYmxlfWAiKSwKICAgICAgICApKTsKICAgIH0KICAgIE9rKCgpKQp9CgpmbiB2YWxpZGF0ZV9mbG9hdF9ydWxlKAogICAgcGF0aDogJlBhdGgsCiAgICB2YXJpYWJsZTogJnN0ciwKICAgIHJ1bGU6ICZWYXJpYWJsZVJ1bGUsCikgLT4gUmVzdWx0PCgpLCBTY2hlbWFQYXJzZUVycm9yPiB7CiAgICBpZiBydWxlLm1pbl9sZW5ndGguaXNfc29tZSgpIHx8IHJ1bGUubWF4X2xlbmd0aC5pc19zb21lKCkgfHwgcnVsZS5wYXR0ZXJuLmlzX3NvbWUoKSB7CiAgICAgICAgcmV0dXJuIEVycihpbmNvbXBhdGlibGVfY29uc3RyYWludChwYXRoLCB2YXJpYWJsZSwgInN0cmluZyBjb25zdHJhaW50IikpOwogICAgfQoKICAgIGxldCBtaW4gPSBmbG9hdF9jb25zdHJhaW50KHBhdGgsIHZhcmlhYmxlLCAibWluIiwgcnVsZS5taW4uYXNfcmVmKCkpPzsKICAgIGxldCBtYXggPSBmbG9hdF9jb25zdHJhaW50KHBhdGgsIHZhcmlhYmxlLCAibWF4IiwgcnVsZS5tYXguYXNfcmVmKCkpPzsKICAgIGlmIGxldCAoU29tZShtaW4pLCBTb21lKG1heCkpID0gKG1pbiwgbWF4KQogICAgICAgICYmIG1pbiA+IG1heAogICAgewogICAgICAgIHJldHVybiBFcnIoZGVmaW5pdGlvbl9lcnJvcigKICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgZm9ybWF0ISgibWluIGV4Y2VlZHMgbWF4IGZvciBge3ZhcmlhYmxlfWAiKSwKICAgICAgICApKTsKICAgIH0KICAgIE9rKCgpKQp9CgpmbiB2YWxpZGF0ZV9ib29sZWFuX3J1bGUoCiAgICBwYXRoOiAmUGF0aCwKICAgIHZhcmlhYmxlOiAmc3RyLAogICAgcnVsZTogJlZhcmlhYmxlUnVsZSwKKSAtPiBSZXN1bHQ8KCksIFNjaGVtYVBhcnNlRXJyb3I+IHsKICAgIGlmIHJ1bGUubWluLmlzX3NvbWUoKQogICAgICAgIHx8IHJ1bGUubWF4LmlzX3NvbWUoKQogICAgICAgIHx8IHJ1bGUubWluX2xlbmd0aC5pc19zb21lKCkKICAgICAgICB8fCBydWxlLm1heF9sZW5ndGguaXNfc29tZSgpCiAgICAgICAgfHwgcnVsZS5wYXR0ZXJuLmlzX3NvbWUoKQogICAgewogICAgICAgIHJldHVybiBFcnIoaW5jb21wYXRpYmxlX2NvbnN0cmFpbnQocGF0aCwgdmFyaWFibGUsICJ2YWx1ZSBjb25zdHJhaW50IikpOwogICAgfQogICAgT2soKCkpCn0KCmZuIGZsb2F0X2NvbnN0cmFpbnQoCiAgICBwYXRoOiAmUGF0aCwKICAgIHZhcmlhYmxlOiAmc3RyLAogICAgbmFtZTogJnN0ciwKICAgIHZhbHVlOiBPcHRpb248JlNjaGVtYVNjYWxhcj4sCikgLT4gUmVzdWx0PE9wdGlvbjxmNjQ+LCBTY2hlbWFQYXJzZUVycm9yPiB7CiAgICBtYXRjaCB2YWx1ZSB7CiAgICAgICAgTm9uZSA9PiBPayhOb25lKSwKICAgICAgICBTb21lKFNjaGVtYVNjYWxhcjo6SW50ZWdlcih2YWx1ZSkpID0+IE9rKFNvbWUoKnZhbHVlIGFzIGY2NCkpLAogICAgICAgIFNvbWUoU2NoZW1hU2NhbGFyOjpGbG9hdCh2YWx1ZSkpIGlmIHZhbHVlLmlzX2Zpbml0ZSgpID0+IE9rKFNvbWUoKnZhbHVlKSksCiAgICAgICAgU29tZShTY2hlbWFTY2FsYXI6OkZsb2F0KF8pKSA9PiBFcnIoZGVmaW5pdGlvbl9lcnJvcigKICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgZm9ybWF0ISgibm9uLWZpbml0ZSBmbG9hdCB7bmFtZX0gZm9yIGB7dmFyaWFibGV9YCIpLAogICAgICAgICkpLAogICAgICAgIFNvbWUoXykgPT4gRXJyKGRlZmluaXRpb25fZXJyb3IoCiAgICAgICAgICAgIHBhdGgsCiAgICAgICAgICAgIGZvcm1hdCEoImZsb2F0IHtuYW1lfSBoYXMgaW5jb21wYXRpYmxlIHNjYWxhciB0eXBlIGZvciBge3ZhcmlhYmxlfWAiKSwKICAgICAgICApKSwKICAgIH0KfQoKZm4gaW5jb21wYXRpYmxlX2NvbnN0cmFpbnQocGF0aDogJlBhdGgsIHZhcmlhYmxlOiAmc3RyLCBuYW1lOiAmc3RyKSAtPiBTY2hlbWFQYXJzZUVycm9yIHsKICAgIGRlZmluaXRpb25fZXJyb3IoCiAgICAgICAgcGF0aCwKICAgICAgICBmb3JtYXQhKCJpbmNvbXBhdGlibGUge25hbWV9IGZvciBkZWNsYXJlZCB0eXBlIG9mIGB7dmFyaWFibGV9YCIpLAogICAgKQp9CgpmbiBzeW50YXhfZXJyb3IocGF0aDogJlBhdGgsIGlucHV0OiAmc3RyLCBlcnJvcjogJnRvbWw6OmRlOjpFcnJvcikgLT4gU2NoZW1hUGFyc2VFcnJvciB7CiAgICBsZXQgbG9jYXRpb24gPSBlcnJvci5zcGFuKCkubWFwKHxzcGFufCBsaW5lX2FuZF9jb2x1bW4oaW5wdXQsIHNwYW4uc3RhcnQpKTsKICAgIFNjaGVtYVBhcnNlRXJyb3IgewogICAgICAgIGtpbmQ6IFNjaGVtYUVycm9yS2luZDo6U3ludGF4LAogICAgICAgIHBhdGg6IHBhdGgudG9fcGF0aF9idWYoKSwKICAgICAgICByZWFzb246ICJtYWxmb3JtZWQgVE9NTCBzY2hlbWEiLnRvX293bmVkKCksCiAgICAgICAgbGluZTogbG9jYXRpb24ubWFwKHwobGluZSwgXyl8IGxpbmUpLAogICAgICAgIGNvbHVtbjogbG9jYXRpb24ubWFwKHwoXywgY29sdW1uKXwgY29sdW1uKSwKICAgIH0KfQoKZm4gZGVmaW5pdGlvbl9kZXNlcmlhbGl6YXRpb25fZXJyb3IoCiAgICBwYXRoOiAmUGF0aCwKICAgIGlucHV0OiAmc3RyLAogICAgZXJyb3I6ICZ0b21sOjpkZTo6RXJyb3IsCikgLT4gU2NoZW1hUGFyc2VFcnJvciB7CiAgICBsZXQgbG9jYXRpb24gPSBlcnJvci5zcGFuKCkubWFwKHxzcGFufCBsaW5lX2FuZF9jb2x1bW4oaW5wdXQsIHNwYW4uc3RhcnQpKTsKICAgIFNjaGVtYVBhcnNlRXJyb3IgewogICAgICAgIGtpbmQ6IFNjaGVtYUVycm9yS2luZDo6RGVmaW5pdGlvbiwKICAgICAgICBwYXRoOiBwYXRoLnRvX3BhdGhfYnVmKCksCiAgICAgICAgcmVhc29uOiAiaW52YWxpZCBzY2hlbWEgc3RydWN0dXJlLCBwcm9wZXJ0eSwgb3Igc2NhbGFyIHR5cGUiLnRvX293bmVkKCksCiAgICAgICAgbGluZTogbG9jYXRpb24ubWFwKHwobGluZSwgXyl8IGxpbmUpLAogICAgICAgIGNvbHVtbjogbG9jYXRpb24ubWFwKHwoXywgY29sdW1uKXwgY29sdW1uKSwKICAgIH0KfQoKZm4gZGVmaW5pdGlvbl9lcnJvcihwYXRoOiAmUGF0aCwgcmVhc29uOiBpbXBsIEludG88U3RyaW5nPikgLT4gU2NoZW1hUGFyc2VFcnJvciB7CiAgICBTY2hlbWFQYXJzZUVycm9yIHsKICAgICAgICBraW5kOiBTY2hlbWFFcnJvcktpbmQ6OkRlZmluaXRpb24sCiAgICAgICAgcGF0aDogcGF0aC50b19wYXRoX2J1ZigpLAogICAgICAgIHJlYXNvbjogcmVhc29uLmludG8oKSwKICAgICAgICBsaW5lOiBOb25lLAogICAgICAgIGNvbHVtbjogTm9uZSwKICAgIH0KfQoKZm4gbGluZV9hbmRfY29sdW1uKGlucHV0OiAmc3RyLCBieXRlX29mZnNldDogdXNpemUpIC0+ICh1c2l6ZSwgdXNpemUpIHsKICAgIGxldCBtdXQgbGluZSA9IDE7CiAgICBsZXQgbXV0IGNvbHVtbiA9IDE7CgogICAgZm9yIChvZmZzZXQsIGNoYXJhY3RlcikgaW4gaW5wdXQuY2hhcl9pbmRpY2VzKCkgewogICAgICAgIGlmIG9mZnNldCA+PSBieXRlX29mZnNldCB7CiAgICAgICAgICAgIGJyZWFrOwogICAgICAgIH0KICAgICAgICBpZiBjaGFyYWN0ZXIgPT0gJ1xuJyB7CiAgICAgICAgICAgIGxpbmUgKz0gMTsKICAgICAgICAgICAgY29sdW1uID0gMTsKICAgICAgICB9IGVsc2UgewogICAgICAgICAgICBjb2x1bW4gKz0gMTsKICAgICAgICB9CiAgICB9CgogICAgKGxpbmUsIGNvbHVtbikKfQoKZm4gaXNfdmFsaWRfdmFyaWFibGVfbmFtZShuYW1lOiAmc3RyKSAtPiBib29sIHsKICAgIGxldCBtdXQgYnl0ZXMgPSBuYW1lLmJ5dGVzKCk7CiAgICBsZXQgU29tZShmaXJzdCkgPSBieXRlcy5uZXh0KCkgZWxzZSB7CiAgICAgICAgcmV0dXJuIGZhbHNlOwogICAgfTsKCiAgICAoZmlyc3QgPT0gYidfJyB8fCBmaXJzdC5pc19hc2NpaV9hbHBoYWJldGljKCkpCiAgICAgICAgJiYgYnl0ZXMuYWxsKHxieXRlfCBieXRlID09IGInXycgfHwgYnl0ZS5pc19hc2NpaV9hbHBoYW51bWVyaWMoKSkKfQoK
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64, os
           from pathlib import Path
-
           model = Path('src/schema/model.rs')
           text = model.read_text()
-          text = text.replace(
-              '#[derive(Clone, Debug, PartialEq, Deserialize)]\npub(crate) struct SchemaDefinition {',
-              '#[derive(Clone, Debug, PartialEq, Deserialize)]\n#[serde(deny_unknown_fields)]\npub(crate) struct SchemaDefinition {',
-              1,
-          )
-          text = text.replace(
-              '#[derive(Clone, Debug, PartialEq, Deserialize)]\npub(crate) struct VariableRule {',
-              '#[derive(Clone, Debug, PartialEq, Deserialize)]\n#[serde(deny_unknown_fields)]\npub(crate) struct VariableRule {',
-              1,
-          )
+          text = text.replace('#[derive(Clone, Debug, PartialEq, Deserialize)]\npub(crate) struct SchemaDefinition {', '#[derive(Clone, Debug, PartialEq, Deserialize)]\n#[serde(deny_unknown_fields)]\npub(crate) struct SchemaDefinition {', 1)
+          text = text.replace('#[derive(Clone, Debug, PartialEq, Deserialize)]\npub(crate) struct VariableRule {', '#[derive(Clone, Debug, PartialEq, Deserialize)]\n#[serde(deny_unknown_fields)]\npub(crate) struct VariableRule {', 1)
           model.write_text(text)
-
           parser = Path('src/schema/parser.rs')
           current = parser.read_text()
           marker = '#[cfg(test)]\nmod tests {'
           assert marker in current
           tests = marker + current.split(marker, 1)[1]
-          production = r'''use std::path::{Path, PathBuf};
-
-use regex::Regex;
-
-use super::model::{SchemaDefinition, SchemaScalar, VariableRule, VariableType};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SchemaErrorKind {
-    Syntax,
-    Definition,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SchemaParseError {
-    pub(crate) kind: SchemaErrorKind,
-    pub(crate) path: PathBuf,
-    pub(crate) reason: String,
-    pub(crate) line: Option<usize>,
-    pub(crate) column: Option<usize>,
-}
-
-pub(crate) fn parse_schema(path: &Path, input: &str) -> Result<SchemaDefinition, SchemaParseError> {
-    toml::from_str::<toml::Value>(input).map_err(|error| syntax_error(path, input, &error))?;
-
-    let schema = toml::from_str::<SchemaDefinition>(input)
-        .map_err(|error| definition_deserialization_error(path, input, &error))?;
-
-    validate_schema_definition(path, &schema)?;
-    Ok(schema)
-}
-
-fn validate_schema_definition(
-    path: &Path,
-    schema: &SchemaDefinition,
-) -> Result<(), SchemaParseError> {
-    if schema.version != 1 {
-        return Err(definition_error(path, "unsupported schema version"));
-    }
-
-    for (variable, rule) in &schema.variables {
-        if !is_valid_variable_name(variable) {
-            return Err(definition_error(
-                path,
-                format!("invalid variable name `{variable}`"),
-            ));
-        }
-        validate_rule(path, variable, rule)?;
-    }
-
-    Ok(())
-}
-
-fn validate_rule(path: &Path, variable: &str, rule: &VariableRule) -> Result<(), SchemaParseError> {
-    match rule.r#type {
-        VariableType::String => validate_string_rule(path, variable, rule)?,
-        VariableType::Integer => validate_integer_rule(path, variable, rule)?,
-        VariableType::Float => validate_float_rule(path, variable, rule)?,
-        VariableType::Boolean => validate_boolean_rule(path, variable, rule)?,
-    }
-
-    if let Some(allowed) = rule.allowed.as_deref() {
-        for item in allowed {
-            let compatible = match rule.r#type {
-                VariableType::String => matches!(item, SchemaScalar::String(_)),
-                VariableType::Integer => matches!(item, SchemaScalar::Integer(_)),
-                VariableType::Float => match item {
-                    SchemaScalar::Integer(_) => true,
-                    SchemaScalar::Float(value) => value.is_finite(),
-                    _ => false,
-                },
-                VariableType::Boolean => matches!(item, SchemaScalar::Boolean(_)),
-            };
-            if !compatible {
-                return Err(definition_error(
-                    path,
-                    format!("incompatible allowed entry for `{variable}`"),
-                ));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_string_rule(
-    path: &Path,
-    variable: &str,
-    rule: &VariableRule,
-) -> Result<(), SchemaParseError> {
-    if rule.min.is_some() || rule.max.is_some() {
-        return Err(incompatible_constraint(path, variable, "min/max"));
-    }
-    if let (Some(min), Some(max)) = (rule.min_length, rule.max_length)
-        && min > max
-    {
-        return Err(definition_error(
-            path,
-            format!("min_length exceeds max_length for `{variable}`"),
-        ));
-    }
-    if let Some(pattern) = rule.pattern.as_deref()
-        && Regex::new(pattern).is_err()
-    {
-        return Err(definition_error(
-            path,
-            format!("invalid regex pattern for `{variable}`"),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_integer_rule(
-    path: &Path,
-    variable: &str,
-    rule: &VariableRule,
-) -> Result<(), SchemaParseError> {
-    if rule.min_length.is_some() || rule.max_length.is_some() || rule.pattern.is_some() {
-        return Err(incompatible_constraint(path, variable, "string constraint"));
-    }
-
-    let min = match rule.min.as_ref() {
-        Some(SchemaScalar::Integer(value)) => Some(*value),
-        Some(_) => {
-            return Err(definition_error(
-                path,
-                format!("integer min has incompatible scalar type for `{variable}`"),
-            ));
-        }
-        None => None,
-    };
-    let max = match rule.max.as_ref() {
-        Some(SchemaScalar::Integer(value)) => Some(*value),
-        Some(_) => {
-            return Err(definition_error(
-                path,
-                format!("integer max has incompatible scalar type for `{variable}`"),
-            ));
-        }
-        None => None,
-    };
-    if let (Some(min), Some(max)) = (min, max)
-        && min > max
-    {
-        return Err(definition_error(
-            path,
-            format!("min exceeds max for `{variable}`"),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_float_rule(
-    path: &Path,
-    variable: &str,
-    rule: &VariableRule,
-) -> Result<(), SchemaParseError> {
-    if rule.min_length.is_some() || rule.max_length.is_some() || rule.pattern.is_some() {
-        return Err(incompatible_constraint(path, variable, "string constraint"));
-    }
-
-    let min = float_constraint(path, variable, "min", rule.min.as_ref())?;
-    let max = float_constraint(path, variable, "max", rule.max.as_ref())?;
-    if let (Some(min), Some(max)) = (min, max)
-        && min > max
-    {
-        return Err(definition_error(
-            path,
-            format!("min exceeds max for `{variable}`"),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_boolean_rule(
-    path: &Path,
-    variable: &str,
-    rule: &VariableRule,
-) -> Result<(), SchemaParseError> {
-    if rule.min.is_some()
-        || rule.max.is_some()
-        || rule.min_length.is_some()
-        || rule.max_length.is_some()
-        || rule.pattern.is_some()
-    {
-        return Err(incompatible_constraint(path, variable, "value constraint"));
-    }
-    Ok(())
-}
-
-fn float_constraint(
-    path: &Path,
-    variable: &str,
-    name: &str,
-    value: Option<&SchemaScalar>,
-) -> Result<Option<f64>, SchemaParseError> {
-    match value {
-        None => Ok(None),
-        Some(SchemaScalar::Integer(value)) => Ok(Some(*value as f64)),
-        Some(SchemaScalar::Float(value)) if value.is_finite() => Ok(Some(*value)),
-        Some(SchemaScalar::Float(_)) => Err(definition_error(
-            path,
-            format!("non-finite float {name} for `{variable}`"),
-        )),
-        Some(_) => Err(definition_error(
-            path,
-            format!("float {name} has incompatible scalar type for `{variable}`"),
-        )),
-    }
-}
-
-fn incompatible_constraint(path: &Path, variable: &str, name: &str) -> SchemaParseError {
-    definition_error(
-        path,
-        format!("incompatible {name} for declared type of `{variable}`"),
-    )
-}
-
-fn syntax_error(path: &Path, input: &str, error: &toml::de::Error) -> SchemaParseError {
-    let location = error.span().map(|span| line_and_column(input, span.start));
-    SchemaParseError {
-        kind: SchemaErrorKind::Syntax,
-        path: path.to_path_buf(),
-        reason: "malformed TOML schema".to_owned(),
-        line: location.map(|(line, _)| line),
-        column: location.map(|(_, column)| column),
-    }
-}
-
-fn definition_deserialization_error(
-    path: &Path,
-    input: &str,
-    error: &toml::de::Error,
-) -> SchemaParseError {
-    let location = error.span().map(|span| line_and_column(input, span.start));
-    SchemaParseError {
-        kind: SchemaErrorKind::Definition,
-        path: path.to_path_buf(),
-        reason: "invalid schema structure, property, or scalar type".to_owned(),
-        line: location.map(|(line, _)| line),
-        column: location.map(|(_, column)| column),
-    }
-}
-
-fn definition_error(path: &Path, reason: impl Into<String>) -> SchemaParseError {
-    SchemaParseError {
-        kind: SchemaErrorKind::Definition,
-        path: path.to_path_buf(),
-        reason: reason.into(),
-        line: None,
-        column: None,
-    }
-}
-
-fn line_and_column(input: &str, byte_offset: usize) -> (usize, usize) {
-    let mut line = 1;
-    let mut column = 1;
-
-    for (offset, character) in input.char_indices() {
-        if offset >= byte_offset {
-            break;
-        }
-        if character == '\n' {
-            line += 1;
-            column = 1;
-        } else {
-            column += 1;
-        }
-    }
-
-    (line, column)
-}
-
-fn is_valid_variable_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    let Some(first) = bytes.next() else {
-        return false;
-    };
-
-    (first == b'_' || first.is_ascii_alphabetic())
-        && bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
-}
-
-'''
-          parser.write_text(production + tests)
-
+          prefix = base64.b64decode(os.environ['PARSER_PREFIX_B64']).decode()
+          parser.write_text(prefix + tests)
           main = Path('src/main.rs')
           text = main.read_text()
-          old = '''fn schema_failure(error: schema::parser::SchemaParseError) -> PreventingFailure {
-    PreventingFailure {
-        category: FailureCategory::Schema,
-        path: error.path,
-        reason: SafeFailureReason::InvalidSchemaDefinition,
-        line: error.line,
-        column: error.column,
-    }
-}
-'''
-          new = '''fn schema_failure(error: schema::parser::SchemaParseError) -> PreventingFailure {
-    let reason = match error.kind {
-        schema::parser::SchemaErrorKind::Syntax => SafeFailureReason::InvalidSchemaSyntax,
-        schema::parser::SchemaErrorKind::Definition => SafeFailureReason::InvalidSchemaDefinition,
-    };
-    PreventingFailure {
-        category: FailureCategory::Schema,
-        path: error.path,
-        reason,
-        line: error.line,
-        column: error.column,
-    }
-}
-'''
+          old = 'fn schema_failure(error: schema::parser::SchemaParseError) -> PreventingFailure {\n    PreventingFailure {\n        category: FailureCategory::Schema,\n        path: error.path,\n        reason: SafeFailureReason::InvalidSchemaDefinition,\n        line: error.line,\n        column: error.column,\n    }\n}\n'
+          new = 'fn schema_failure(error: schema::parser::SchemaParseError) -> PreventingFailure {\n    let reason = match error.kind {\n        schema::parser::SchemaErrorKind::Syntax => SafeFailureReason::InvalidSchemaSyntax,\n        schema::parser::SchemaErrorKind::Definition => SafeFailureReason::InvalidSchemaDefinition,\n    };\n    PreventingFailure {\n        category: FailureCategory::Schema,\n        path: error.path,\n        reason,\n        line: error.line,\n        column: error.column,\n    }\n}\n'
           assert old in text
           main.write_text(text.replace(old, new, 1))
           PY
@@ -384,18 +60,8 @@ fn is_valid_variable_name(name: &str) -> bool {
       - name: Mark T040-T043 and commit
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('specs/001-env-validation/tasks.md')
-          text = path.read_text()
-          for task in range(40, 44):
-              old = f'- [ ] T{task:03d}'
-              new = f'- [X] T{task:03d}'
-              assert old in text
-              text = text.replace(old, new, 1)
-          assert '- [ ] T044' in text
-          path.write_text(text)
-          PY
+          python3 -c "from pathlib import Path; p=Path('specs/001-env-validation/tasks.md'); t=p.read_text(); [(_ for _ in ()).throw(AssertionError()) if f'- [ ] T{i:03d}' not in t else None for i in range(40,44)]; t=''.join(t.replace(f'- [ ] T{i:03d}', f'- [X] T{i:03d}', 1) if i==40 else '' for i in []) if False else t; [None for _ in ()]; p.write_text(__import__('functools').reduce(lambda s,i:s.replace(f'- [ ] T{i:03d}',f'- [X] T{i:03d}',1), range(40,44), t))"
+          grep -q -- '- \[ \] T044' specs/001-env-validation/tasks.md
           test ! -e .specify/extensions.yml
           rm .github/workflows/us3-green.yml
           git config user.name "github-actions[bot]"
