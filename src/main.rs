@@ -80,8 +80,11 @@ fn main() -> ExitCode {
         return run_explicit_example(&cli.env_file, example_path);
     }
 
-    // Validator discovery and schema execution are intentionally implemented by later tasks.
-    let _ = cli.schema;
+    if let Some(schema_path) = cli.schema.as_deref() {
+        return run_explicit_schema(&cli.env_file, schema_path);
+    }
+
+    // Validator discovery is intentionally implemented by US4.
     ExitCode::from(EXIT_SUCCESS)
 }
 
@@ -114,6 +117,35 @@ fn run_explicit_example(target_path: &Path, example_path: &Path) -> ExitCode {
     ExitCode::from(exit)
 }
 
+fn run_explicit_schema(target_path: &Path, schema_path: &Path) -> ExitCode {
+    let target_text = match read_input(target_path) {
+        Ok(text) => text,
+        Err(failure) => return preventing_exit(failure),
+    };
+    let schema_text = match read_input(schema_path) {
+        Ok(text) => text,
+        Err(failure) => return preventing_exit(failure),
+    };
+
+    let target = match env::parser::parse_dotenv(target_path, &target_text) {
+        Ok(document) => document,
+        Err(error) => return preventing_exit(dotenv_failure(error)),
+    };
+    let schema = match schema::parser::parse_schema(schema_path, &schema_text) {
+        Ok(schema) => schema,
+        Err(error) => return schema_preventing_exit(schema_failure(error)),
+    };
+
+    let result = validation::validator::validate_schema(&target, &schema);
+    let exit = if result.has_errors() {
+        EXIT_VALIDATION_ERROR
+    } else {
+        EXIT_SUCCESS
+    };
+    let _ = output::write_validation_stdout(&result);
+    ExitCode::from(exit)
+}
+
 fn read_input(path: &Path) -> Result<String, PreventingFailure> {
     fs::read_to_string(path).map_err(|_| PreventingFailure {
         category: FailureCategory::Input,
@@ -132,6 +164,21 @@ fn dotenv_failure(error: env::parser::DotenvParseError) -> PreventingFailure {
         line: error.line,
         column: error.column,
     }
+}
+
+fn schema_failure(error: schema::parser::SchemaParseError) -> PreventingFailure {
+    PreventingFailure {
+        category: FailureCategory::Schema,
+        path: error.path,
+        reason: SafeFailureReason::InvalidSchemaDefinition,
+        line: error.line,
+        column: error.column,
+    }
+}
+
+fn schema_preventing_exit(failure: PreventingFailure) -> ExitCode {
+    let _ = output::write_preventing_stderr(&failure);
+    ExitCode::from(EXIT_SCHEMA_ERROR)
 }
 
 fn preventing_exit(failure: PreventingFailure) -> ExitCode {
