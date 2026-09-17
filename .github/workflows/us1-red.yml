@@ -1,0 +1,513 @@
+name: US1 RED Tests
+
+on:
+  push:
+    branches:
+      - chore/init-spec-kit
+    paths:
+      - .github/workflows/us1-red.yml
+
+permissions:
+  contents: write
+
+jobs:
+  red:
+    if: github.event.head_commit.message == 'chore: run us1 red tests'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: chore/init-spec-kit
+          fetch-depth: 0
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify prerequisites and checklist gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+          for n in $(seq -w 1 12); do
+            grep -Eq -- "^- \[[Xx]\] T0${n}\\b" specs/001-env-validation/tasks.md
+          done
+          grep -F -- '- [ ] T013 ' specs/001-env-validation/tasks.md
+          grep -F -- '- [ ] T014 ' specs/001-env-validation/tasks.md
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for path in sorted(Path('specs/001-env-validation/checklists').glob('*.md')):
+              text = path.read_text()
+              total = len(re.findall(r'^- \[(?: |X|x)\] ', text, flags=re.M))
+              checked = len(re.findall(r'^- \[(?:X|x)\] ', text, flags=re.M))
+              unchecked = len(re.findall(r'^- \[ \] ', text, flags=re.M))
+              print(f'{path.name}: total={total} checked={checked} unchecked={unchecked}')
+              if unchecked:
+                  raise SystemExit(f'Checklist gate failed: {path} has {unchecked} unchecked items')
+          PY
+          test ! -e .specify/extensions.yml
+          git rev-parse --git-dir >/dev/null
+          grep -Eq '^(target|target/|/target/?)$' .gitignore
+
+      - name: Verify Foundation baseline remains green
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --bin envcheck
+          cargo test --test cli
+
+      - name: Add T013 presence-rule RED tests
+        shell: bash
+        run: |
+          cat > src/validation/rules/presence.rs <<'RS'
+          #[cfg(test)]
+          mod tests {
+              use std::path::PathBuf;
+
+              use crate::env::{EnvDocument, EnvEntry};
+              use crate::validation::ValidationResult;
+              use crate::validation::error::{RuleCode, Severity};
+
+              use super::validate_example_presence;
+
+              fn document(path: &str, entries: &[(&str, &str, usize)]) -> EnvDocument {
+                  EnvDocument::new(
+                      PathBuf::from(path),
+                      entries
+                          .iter()
+                          .map(|(key, value, line)| EnvEntry {
+                              key: (*key).to_owned(),
+                              value: (*value).to_owned(),
+                              line: *line,
+                          })
+                          .collect(),
+                  )
+              }
+
+              fn has_diagnostic(
+                  result: &ValidationResult,
+                  severity: Severity,
+                  code: RuleCode,
+                  variable: &str,
+              ) -> bool {
+                  result.diagnostics.iter().any(|diagnostic| {
+                      diagnostic.severity == severity
+                          && diagnostic.code == code
+                          && diagnostic.variable.as_deref() == Some(variable)
+                  })
+              }
+
+              #[test]
+              fn missing_example_key_is_an_error() {
+                  let target = document(".env", &[("APP_NAME", "actual", 1)]);
+                  let example = document(
+                      ".env.example",
+                      &[("APP_NAME", "example", 1), ("REDIS_URL", "ignored", 2)],
+                  );
+
+                  let result = validate_example_presence(&target, &example);
+
+                  assert!(result.has_errors());
+                  assert!(has_diagnostic(
+                      &result,
+                      Severity::Error,
+                      RuleCode::MissingRequired,
+                      "REDIS_URL"
+                  ));
+              }
+
+              #[test]
+              fn reordered_keys_are_valid() {
+                  let target = document(
+                      ".env",
+                      &[("DATABASE_URL", "actual-db", 1), ("APP_NAME", "actual-app", 2)],
+                  );
+                  let example = document(
+                      ".env.example",
+                      &[("APP_NAME", "example-app", 1), ("DATABASE_URL", "example-db", 2)],
+                  );
+
+                  let result = validate_example_presence(&target, &example);
+
+                  assert!(!result.has_errors());
+                  assert!(result.diagnostics.is_empty());
+              }
+
+              #[test]
+              fn example_values_are_ignored() {
+                  let target = document(".env", &[("APP_NAME", "actual-value", 1)]);
+                  let example = document(".env.example", &[("APP_NAME", "different-value", 1)]);
+
+                  let result = validate_example_presence(&target, &example);
+
+                  assert!(!result.has_errors());
+                  assert!(result.diagnostics.is_empty());
+              }
+
+              #[test]
+              fn duplicate_target_key_is_an_error() {
+                  let target = document(
+                      ".env",
+                      &[("PORT", "3000", 1), ("PORT", "4000", 2)],
+                  );
+                  let example = document(".env.example", &[("PORT", "ignored", 1)]);
+
+                  let result = validate_example_presence(&target, &example);
+
+                  assert!(result.has_errors());
+                  assert!(has_diagnostic(
+                      &result,
+                      Severity::Error,
+                      RuleCode::DuplicateKey,
+                      "PORT"
+                  ));
+              }
+
+              #[test]
+              fn duplicate_example_key_is_an_error() {
+                  let target = document(".env", &[("PORT", "3000", 1)]);
+                  let example = document(
+                      ".env.example",
+                      &[("PORT", "first", 1), ("PORT", "second", 2)],
+                  );
+
+                  let result = validate_example_presence(&target, &example);
+
+                  assert!(result.has_errors());
+                  assert!(has_diagnostic(
+                      &result,
+                      Severity::Error,
+                      RuleCode::DuplicateKey,
+                      "PORT"
+                  ));
+              }
+
+              #[test]
+              fn empty_example_is_valid_and_target_keys_are_warnings() {
+                  let target = document(".env", &[("ONLY_TARGET", "sensitive-value", 1)]);
+                  let example = document(".env.example", &[]);
+
+                  let result = validate_example_presence(&target, &example);
+
+                  assert!(!result.has_errors());
+                  assert!(has_diagnostic(
+                      &result,
+                      Severity::Warning,
+                      RuleCode::AdditionalVariable,
+                      "ONLY_TARGET"
+                  ));
+              }
+
+              #[test]
+              fn matching_is_case_sensitive() {
+                  let target = document(".env", &[("port", "3000", 1)]);
+                  let example = document(".env.example", &[("PORT", "ignored", 1)]);
+
+                  let result = validate_example_presence(&target, &example);
+
+                  assert!(result.has_errors());
+                  assert!(has_diagnostic(
+                      &result,
+                      Severity::Error,
+                      RuleCode::MissingRequired,
+                      "PORT"
+                  ));
+                  assert!(has_diagnostic(
+                      &result,
+                      Severity::Warning,
+                      RuleCode::AdditionalVariable,
+                      "port"
+                  ));
+              }
+
+              #[test]
+              fn target_only_key_is_an_additional_variable_warning() {
+                  let target = document(
+                      ".env",
+                      &[("APP_NAME", "actual", 1), ("LEGACY_FLAG", "enabled", 2)],
+                  );
+                  let example = document(".env.example", &[("APP_NAME", "ignored", 1)]);
+
+                  let result = validate_example_presence(&target, &example);
+
+                  assert!(!result.has_errors());
+                  assert!(has_diagnostic(
+                      &result,
+                      Severity::Warning,
+                      RuleCode::AdditionalVariable,
+                      "LEGACY_FLAG"
+                  ));
+              }
+          }
+          RS
+
+      - name: Add T014 compiled CLI RED tests
+        shell: bash
+        run: |
+          cat > tests/cli.rs <<'RS'
+          use std::fs;
+          use std::path::{Path, PathBuf};
+          use std::process::Output;
+
+          use assert_cmd::Command;
+          use tempfile::TempDir;
+
+          struct ExampleFixture {
+              _directory: TempDir,
+              target: PathBuf,
+              example: PathBuf,
+          }
+
+          impl ExampleFixture {
+              fn new(target: &str, example: &str) -> Self {
+                  let directory = tempfile::tempdir().expect("temporary directory");
+                  let target_path = directory.path().join(".env");
+                  let example_path = directory.path().join(".env.example");
+                  fs::write(&target_path, target).expect("write target dotenv");
+                  fs::write(&example_path, example).expect("write example dotenv");
+                  Self {
+                      _directory: directory,
+                      target: target_path,
+                      example: example_path,
+                  }
+              }
+          }
+
+          fn run_example(target: &Path, example: &Path) -> Output {
+              let mut command = Command::cargo_bin("envcheck").expect("compiled envcheck binary");
+              command.arg(target).arg("--example").arg(example);
+              command.output().expect("execute envcheck")
+          }
+
+          fn stdout(output: &Output) -> String {
+              String::from_utf8_lossy(&output.stdout).into_owned()
+          }
+
+          fn stderr(output: &Output) -> String {
+              String::from_utf8_lossy(&output.stderr).into_owned()
+          }
+
+          fn assert_target_values_redacted(output: &Output, target_values: &[&str]) {
+              let stdout = stdout(output);
+              let stderr = stderr(output);
+              for value in target_values {
+                  assert!(!stdout.contains(value), "stdout exposed target value: {value}");
+                  assert!(!stderr.contains(value), "stderr exposed target value: {value}");
+              }
+          }
+
+          #[test]
+          fn explicit_example_success_exits_zero_and_reports_ok_without_values() {
+              let fixture = ExampleFixture::new(
+                  "APP_NAME=synthetic-app-secret\nREDIS_URL=redis://synthetic-secret-host\n",
+                  "APP_NAME=example-name\nREDIS_URL=example-redis\n",
+              );
+
+              let output = run_example(&fixture.target, &fixture.example);
+
+              assert_eq!(output.status.code(), Some(0));
+              assert!(stdout(&output).contains("ok: environment validation succeeded"));
+              assert!(stderr(&output).is_empty());
+              assert_target_values_redacted(
+                  &output,
+                  &["synthetic-app-secret", "redis://synthetic-secret-host"],
+              );
+          }
+
+          #[test]
+          fn missing_redis_url_exits_one_without_exposing_target_values() {
+              let fixture = ExampleFixture::new(
+                  "APP_NAME=synthetic-app-secret\nDATABASE_URL=postgres://synthetic-secret-db\n",
+                  "APP_NAME=ignored\nDATABASE_URL=ignored\nREDIS_URL=ignored\n",
+              );
+
+              let output = run_example(&fixture.target, &fixture.example);
+
+              assert_eq!(output.status.code(), Some(1));
+              let stdout = stdout(&output);
+              assert!(stdout.contains("error"));
+              assert!(stdout.contains("REDIS_URL"));
+              assert_target_values_redacted(
+                  &output,
+                  &["synthetic-app-secret", "postgres://synthetic-secret-db"],
+              );
+          }
+
+          #[test]
+          fn duplicate_target_declaration_exits_one_without_exposing_values() {
+              let fixture = ExampleFixture::new(
+                  "PORT=3000\nPORT=4000\n",
+                  "PORT=ignored\n",
+              );
+
+              let output = run_example(&fixture.target, &fixture.example);
+
+              assert_eq!(output.status.code(), Some(1));
+              let stdout = stdout(&output);
+              assert!(stdout.contains("error"));
+              assert!(stdout.contains("PORT"));
+              assert_target_values_redacted(&output, &["3000", "4000"]);
+          }
+
+          #[test]
+          fn target_only_variable_is_warning_only_and_exits_zero() {
+              let fixture = ExampleFixture::new(
+                  "APP_NAME=synthetic-app-secret\nLEGACY_FLAG=synthetic-legacy-secret\n",
+                  "APP_NAME=ignored\n",
+              );
+
+              let output = run_example(&fixture.target, &fixture.example);
+
+              assert_eq!(output.status.code(), Some(0));
+              let stdout = stdout(&output);
+              assert!(stdout.contains("warning"));
+              assert!(stdout.contains("LEGACY_FLAG"));
+              assert!(stdout.contains("ok: environment validation succeeded"));
+              assert_target_values_redacted(
+                  &output,
+                  &["synthetic-app-secret", "synthetic-legacy-secret"],
+              );
+          }
+
+          #[test]
+          fn malformed_target_dotenv_exits_three_with_safe_file_context() {
+              let fixture = ExampleFixture::new(
+                  "API_KEY=synthetic-target-secret\nnot an assignment\n",
+                  "API_KEY=ignored\n",
+              );
+
+              let output = run_example(&fixture.target, &fixture.example);
+
+              assert_eq!(output.status.code(), Some(3));
+              let stderr = stderr(&output);
+              assert!(stderr.contains(&fixture.target.display().to_string()));
+              assert!(stderr.contains("invalid dotenv"));
+              assert!(stderr.contains(":2"));
+              assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+          }
+
+          #[test]
+          fn malformed_example_dotenv_exits_three_with_safe_file_context() {
+              let fixture = ExampleFixture::new(
+                  "API_KEY=synthetic-target-secret\n",
+                  "API_KEY=ignored\nnot an assignment\n",
+              );
+
+              let output = run_example(&fixture.target, &fixture.example);
+
+              assert_eq!(output.status.code(), Some(3));
+              let stderr = stderr(&output);
+              assert!(stderr.contains(&fixture.example.display().to_string()));
+              assert!(stderr.contains("invalid dotenv"));
+              assert!(stderr.contains(":2"));
+              assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+          }
+          RS
+
+      - name: Format tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt
+          cargo fmt --check
+
+      - name: Observe required RED state
+        shell: bash
+        run: |
+          set -u
+
+          set +e
+          cargo test --lib > /tmp/lib.log 2>&1
+          lib_status=$?
+          cargo test --bin envcheck > /tmp/unit.log 2>&1
+          unit_status=$?
+          cargo test --test cli > /tmp/cli.log 2>&1
+          cli_status=$?
+          set -e
+
+          echo '===== cargo test --lib ====='
+          cat /tmp/lib.log
+          echo "status=$lib_status"
+          echo '===== cargo test --bin envcheck ====='
+          cat /tmp/unit.log
+          echo "status=$unit_status"
+          echo '===== cargo test --test cli ====='
+          cat /tmp/cli.log
+          echo "status=$cli_status"
+
+          test "$lib_status" -ne 0
+          grep -F 'no library targets found' /tmp/lib.log
+
+          test "$unit_status" -ne 0
+          grep -F 'validate_example_presence' /tmp/unit.log
+
+          test "$cli_status" -ne 0
+          grep -Eq 'test result: FAILED|FAILED' /tmp/cli.log
+          grep -F 'explicit_example_success_exits_zero_and_reports_ok_without_values' /tmp/cli.log
+          grep -F 'missing_redis_url_exits_one_without_exposing_target_values' /tmp/cli.log
+          grep -F 'duplicate_target_declaration_exits_one_without_exposing_values' /tmp/cli.log
+          grep -F 'target_only_variable_is_warning_only_and_exits_zero' /tmp/cli.log
+          grep -F 'malformed_target_dotenv_exits_three_with_safe_file_context' /tmp/cli.log
+          grep -F 'malformed_example_dotenv_exits_three_with_safe_file_context' /tmp/cli.log
+
+      - name: Mark only T013 and T014 complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('specs/001-env-validation/tasks.md')
+          text = path.read_text()
+          for task in ('T013', 'T014'):
+              old = f'- [ ] {task} '
+              new = f'- [X] {task} '
+              if text.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one unchecked {task}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          checked = re.findall(r'^- \[(?:X|x)\] (T\d{3})\b', text, flags=re.M)
+          expected = [f'T{i:03d}' for i in range(1, 15)]
+          if checked[:14] != expected:
+              raise SystemExit(f'Unexpected first checked tasks: {checked[:14]}')
+          if '- [ ] T015 ' not in text:
+              raise SystemExit('T015 must remain unchecked')
+          print('Checked through:', ', '.join(expected))
+          PY
+
+      - name: Verify scope and commit RED tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/us1-red.yml
+          cargo fmt --check
+          test ! -e .specify/extensions.yml
+
+          python3 - <<'PY'
+          import subprocess
+          allowed = {
+              'src/validation/rules/presence.rs',
+              'tests/cli.rs',
+              'specs/001-env-validation/tasks.md',
+              '.github/workflows/us1-red.yml',
+          }
+          paths = []
+          for line in subprocess.check_output(['git', 'status', '--porcelain'], text=True).splitlines():
+              path = line[3:]
+              if ' -> ' in path:
+                  path = path.split(' -> ', 1)[1]
+              paths.append(path)
+          unexpected = sorted(set(paths) - allowed)
+          if unexpected:
+              raise SystemExit(f'Unexpected changed paths: {unexpected}')
+          print('Changed paths:', ', '.join(paths))
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'test: define env example validation behavior'
+          git push origin HEAD:chore/init-spec-kit
