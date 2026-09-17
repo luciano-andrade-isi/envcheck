@@ -162,9 +162,9 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 **Purpose**: Close cross-platform, quality-gate, security, and end-to-end gaps after all desired user stories are implemented.
 
-- [ ] T051 [P] Add cross-platform regression cases for LF/CRLF, temporary paths, case-sensitive variable identity, and portable file handling in `src/env/parser.rs` and `tests/cli.rs`
-- [ ] T052 [P] Add a GitHub Actions CI matrix in `.github/workflows/ci.yml` that runs the Envcheck test suite on `ubuntu-latest`, `macos-latest`, and `windows-latest`, so SC-007 is demonstrated on all three supported operating systems before release
-- [ ] T053 Review all test fixtures for synthetic-only environment values and add explicit redaction plus byte-for-byte read-only regression assertions in `tests/cli.rs`, proving `.env`, `.env.example`, and `.env.schema` remain unchanged after representative successful and failing invocations
+- [X] T051 [P] Add cross-platform regression cases for LF/CRLF, temporary paths, case-sensitive variable identity, and portable file handling in `src/env/parser.rs` and `tests/cli.rs`
+- [X] T052 [P] Add a GitHub Actions CI matrix in `.github/workflows/ci.yml` that runs the Envcheck test suite on `ubuntu-latest`, `macos-latest`, and `windows-latest`, so SC-007 is demonstrated on all three supported operating systems before release
+- [X] T053 Review all test fixtures for synthetic-only environment values and add explicit redaction plus byte-for-byte read-only regression assertions in `tests/cli.rs`, proving `.env`, `.env.example`, and `.env.schema` remain unchanged after representative successful and failing invocations
 - [ ] T054 Execute every scenario documented in `specs/001-env-validation/quickstart.md` and update only that file if observed command examples or expected outcomes need correction
 - [ ] T055 Run `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`, fixing any violations in `Cargo.toml`, `src/`, and `tests/` without changing the published contracts
 - [ ] T056 Audit dependency/API usage against the design constraints in `Cargo.toml` and `src/env/parser.rs`, ensuring Envcheck uses only dotenv scanning/tokenization and never dotenv expansion, evaluation, decryption, environment injection, or network-capable behavior

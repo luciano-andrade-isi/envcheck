@@ -283,4 +283,26 @@ mod tests {
         assert!(!format!("{error}").contains(secret));
         assert!(!format!("{error:?}").contains(secret));
     }
+
+    #[test]
+    fn lf_crlf_temporary_paths_and_case_sensitive_keys_are_portable() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("nested").join(".env");
+        let lf = "PORT=synthetic-port\nport=synthetic-lower-port\n";
+        let crlf = "PORT=synthetic-port\r\nport=synthetic-lower-port\r\n";
+
+        let lf_document = parse_dotenv(&path, lf).expect("LF dotenv should parse");
+        let crlf_document = parse_dotenv(&path, crlf).expect("CRLF dotenv should parse");
+
+        assert_eq!(lf_document.path, path);
+        assert_eq!(crlf_document.path, path);
+        assert_eq!(lf_document.entries, crlf_document.entries);
+        assert_eq!(lf_document.key_index, crlf_document.key_index);
+        assert!(lf_document.key_index.contains_key("PORT"));
+        assert!(lf_document.key_index.contains_key("port"));
+        assert_ne!(
+            lf_document.key_index.get("PORT"),
+            lf_document.key_index.get("port")
+        );
+    }
 }

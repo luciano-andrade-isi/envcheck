@@ -1,3 +1,4 @@
+// All environment values in this integration suite are synthetic test data.
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -1009,4 +1010,123 @@ required = true
             "stdout exposed target value: {value}"
         );
     }
+}
+
+#[test]
+fn cross_platform_lf_and_crlf_nested_temp_paths_validate_equivalently() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let lf_dir = directory.path().join("portable").join("lf");
+    let crlf_dir = directory.path().join("portable").join("crlf");
+    fs::create_dir_all(&lf_dir).expect("create LF fixture directory");
+    fs::create_dir_all(&crlf_dir).expect("create CRLF fixture directory");
+
+    let lf_target = lf_dir.join(".env");
+    let lf_example = lf_dir.join(".env.example");
+    let crlf_target = crlf_dir.join(".env");
+    let crlf_example = crlf_dir.join(".env.example");
+
+    fs::write(
+        &lf_target,
+        "APP_NAME=synthetic-portable-app\nPORT=synthetic-portable-port\n",
+    )
+    .expect("write LF target");
+    fs::write(&lf_example, "APP_NAME=ignored\nPORT=ignored\n").expect("write LF example");
+
+    fs::write(
+        &crlf_target,
+        "APP_NAME=synthetic-portable-app\r\nPORT=synthetic-portable-port\r\n",
+    )
+    .expect("write CRLF target");
+    fs::write(&crlf_example, "APP_NAME=ignored\r\nPORT=ignored\r\n").expect("write CRLF example");
+
+    let lf_output = run_target_without_definition_flag(&lf_target);
+    let crlf_output = run_target_without_definition_flag(&crlf_target);
+
+    assert_eq!(lf_output.status.code(), Some(0));
+    assert_eq!(crlf_output.status.code(), Some(0));
+    assert_eq!(lf_output.stdout, crlf_output.stdout);
+    assert_eq!(lf_output.stderr, crlf_output.stderr);
+    assert_target_values_redacted(
+        &lf_output,
+        &["synthetic-portable-app", "synthetic-portable-port"],
+    );
+    assert_target_values_redacted(
+        &crlf_output,
+        &["synthetic-portable-app", "synthetic-portable-port"],
+    );
+}
+
+#[test]
+fn cross_platform_cli_variable_identity_remains_case_sensitive() {
+    let fixture = ExampleFixture::new("port=synthetic-lower-port\n", "PORT=ignored\n");
+
+    let output = run_example(&fixture.target, &fixture.example);
+
+    assert_eq!(output.status.code(), Some(1));
+    let rendered = stdout(&output);
+    assert!(rendered.contains("error: PORT:"));
+    assert!(rendered.contains("warning: port:"));
+    assert!(stderr(&output).is_empty());
+    assert_target_values_redacted(&output, &["synthetic-lower-port"]);
+}
+
+#[test]
+fn security_regression_redacts_target_values_on_completed_and_preventing_paths() {
+    let completed = SchemaFixture::new(
+        "API_KEY=synthetic-completed-secret\n",
+        "version = 1\n[variables.API_KEY]\ntype = \"integer\"\nrequired = true\n",
+    );
+    let completed_output = run_schema(&completed.target, &completed.schema);
+    assert_eq!(completed_output.status.code(), Some(1));
+    assert!(!stdout(&completed_output).is_empty());
+    assert!(stderr(&completed_output).is_empty());
+    assert_target_values_redacted(&completed_output, &["synthetic-completed-secret"]);
+
+    let preventing = ExampleFixture::new(
+        "API_KEY=synthetic-preventing-secret\nnot an assignment\n",
+        "API_KEY=ignored\n",
+    );
+    let preventing_output = run_example(&preventing.target, &preventing.example);
+    assert_eq!(preventing_output.status.code(), Some(3));
+    assert!(stdout(&preventing_output).is_empty());
+    assert!(!stderr(&preventing_output).is_empty());
+    assert_target_values_redacted(&preventing_output, &["synthetic-preventing-secret"]);
+}
+
+#[test]
+fn representative_success_and_failure_leave_all_input_files_byte_for_byte_unchanged() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let example = directory.path().join(".env.example");
+    let schema = directory.path().join(".env.schema");
+
+    let target_bytes = b"VALUE=synthetic-read-only-secret\r\n".to_vec();
+    let example_bytes = b"VALUE=ignored\r\n".to_vec();
+    let schema_bytes =
+        b"version = 1\n[variables.VALUE]\ntype = \"integer\"\nrequired = true\n".to_vec();
+
+    fs::write(&target, &target_bytes).expect("write target");
+    fs::write(&example, &example_bytes).expect("write example");
+    fs::write(&schema, &schema_bytes).expect("write schema");
+
+    let success = run_example(&target, &example);
+    assert_eq!(success.status.code(), Some(0));
+    assert_target_values_redacted(&success, &["synthetic-read-only-secret"]);
+
+    let failure = run_schema(&target, &schema);
+    assert_eq!(failure.status.code(), Some(1));
+    assert_target_values_redacted(&failure, &["synthetic-read-only-secret"]);
+
+    assert_eq!(
+        fs::read(&target).expect("read target after runs"),
+        target_bytes
+    );
+    assert_eq!(
+        fs::read(&example).expect("read example after runs"),
+        example_bytes
+    );
+    assert_eq!(
+        fs::read(&schema).expect("read schema after runs"),
+        schema_bytes
+    );
 }
