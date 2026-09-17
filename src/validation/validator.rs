@@ -1,7 +1,7 @@
 use crate::env::EnvDocument;
 
-use super::rules::presence::validate_example_presence;
 use super::ValidationResult;
+use super::rules::presence::validate_example_presence;
 
 pub(crate) fn validate_example(target: &EnvDocument, example: &EnvDocument) -> ValidationResult {
     let mut result = validate_example_presence(target, example);
