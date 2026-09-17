@@ -69,7 +69,7 @@ variable-level errors without exposing the actual values.
 
 1. **Given** a required integer variable has `min = 1` and `max = 65535`, **When** the target contains
    `1` or `65535`, **Then** the value is valid because numeric bounds are inclusive.
-3. **Given** a float variable contains a finite decimal or scientific-notation value such as `1.5`
+2. **Given** a float variable contains a finite decimal or scientific-notation value such as `1.5`
    or `1e3`, **When** validation runs, **Then** the value is accepted; `NaN`, positive infinity, and
    negative infinity are rejected.
 3. **Given** a boolean variable contains any casing of `true` or `false`, **When** validation runs,
