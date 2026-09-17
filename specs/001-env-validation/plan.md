@@ -24,7 +24,7 @@ The executable will use `clap` derive for argument parsing, `serde` + `toml` for
 
 **Storage**: N/A. Input files are read-only and processed in memory.
 
-**Testing**: `cargo test`; module-local unit tests for parsers and validation rules; integration tests under `tests/` using `assert_cmd` to execute the built `envcheck` binary. Quality gates: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`.
+**Testing**: `cargo test`; module-local unit tests for parsers and validation rules; integration tests under `tests/` using `assert_cmd` to execute the built `envcheck` binary. A CI matrix MUST execute the test suite on Linux, macOS, and Windows before release. Quality gates: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`.
 
 **Target Platform**: Linux, macOS, and Windows.
 
@@ -49,13 +49,20 @@ The executable will use `clap` derive for argument parsing, `serde` + `toml` for
 - **V. Actionable Errors — PASS**: structured diagnostics carry variable/rule/expectation metadata without carrying printable secret values.
 - **VI. Security and Secret Handling — PASS**: domain values never enter default formatted diagnostics; synthetic fixtures only.
 - **VII. Minimal Dependencies — PASS WITH DOCUMENTED TRADEOFF**: each dependency maps to a requested capability. `dotenvx-primitives` is accepted specifically because its scan API preserves duplicates without expansion; only that API is used. No generic error-handling/logging framework is introduced.
-- **VIII. Cross-Platform Behavior — PASS**: paths use `PathBuf`; tests use `tempfile`; newline handling is covered for LF/CRLF.
+- **VIII. Cross-Platform Behavior — PASS**: paths use `PathBuf`; tests use `tempfile`; newline handling is covered for LF/CRLF; release verification includes CI execution on Linux, macOS, and Windows.
 - **IX. Local and In-Memory Validation — PASS**: no network/services/databases; one-pass file reads and in-memory structures.
 - **X. Rust Quality Gates — PASS**: format, clippy, and tests are mandatory before completion; no unsafe Rust planned.
 
 No constitution violation requires a complexity exception.
 
 ## Design Decisions
+
+### Release sequencing safety gate
+
+US1 and US2 provide the two P1 capabilities, but completing valid-schema behavior alone is not a
+safe release boundary. **No public MVP or release may stop after US2.** US3's invalid-schema
+strictness and negative tests are a mandatory correctness gate before release so malformed,
+unsupported, or semantically incompatible schemas cannot be silently accepted.
 
 ### CLI and exit codes
 
@@ -173,7 +180,7 @@ Research is consolidated in [research.md](./research.md). It resolves dependency
 - Unit/integration test responsibilities are explicit in the design and quickstart.
 - Diagnostics are structurally incapable of requiring raw values; output examples contain synthetic values only.
 - Dependencies remain bounded to requested capabilities plus test-only tooling; the dotenv dependency tradeoff is recorded in research.
-- Cross-platform paths/newlines and Windows/macOS/Linux execution are part of acceptance validation.
+- Cross-platform paths/newlines are covered by regression tests, and the release CI matrix executes the suite on Linux, macOS, and Windows.
 - No network, persistence, file mutation, unsafe Rust, or ambient environment lookup has been introduced.
 
 **Post-design gate result: PASS.**

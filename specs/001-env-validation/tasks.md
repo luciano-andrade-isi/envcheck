@@ -107,7 +107,7 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 - [ ] T034 [US2] Implement schema-based target validation orchestration in `src/validation/validator.rs`: duplicate target keys, presence/empty handling, scalar conversion, applicable constraints, target-only warnings, structured safe diagnostics, and deterministic sorting
 - [ ] T035 [US2] Wire explicit `--schema` reading/parsing/validation into `src/main.rs`, using stdout for completed validation and exit `0`/`1` while reserving schema-definition failures for exit `4`
 
-**Checkpoint**: Both P1 capabilities—explicit `.env.example` comparison and valid-schema typed validation—work independently.
+**Checkpoint**: Both P1 capabilities—explicit `.env.example` comparison and valid-schema typed validation—work independently. This is not a release boundary: US3 MUST complete before any public MVP or release so invalid schemas cannot be silently accepted.
 
 ---
 
@@ -145,7 +145,7 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 - [ ] T044 [US4] Add compiled-CLI tests for automatic discovery beside `<ENV_FILE>` (`.env.schema` before `.env.example`), explicit-path override, no-definition exit `3`, unreadable-file exit `3`, and mutually exclusive flags exit `2` in `tests/cli.rs`
 - [ ] T045 [US4] Add compiled-CLI tests asserting stdout is used for completed validation, stderr for preventing failures, warnings alone exit `0`, validation errors exit `1`, schema failures exit `4`, and actual target environment values never appear in either stream in `tests/cli.rs`
-- [ ] T046 [US4] Add deterministic-output integration coverage by running the same representative validation repeatedly and asserting identical diagnostic content/order in `tests/cli.rs`
+- [ ] T046 [US4] Add deterministic-output integration coverage by running the same representative validation exactly 100 times and asserting identical exit code, stdout, stderr, diagnostic content, and diagnostic order across all runs in `tests/cli.rs`
 
 ### Implementation for User Story 4
 
@@ -163,10 +163,11 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 **Purpose**: Close cross-platform, quality-gate, security, and end-to-end gaps after all desired user stories are implemented.
 
 - [ ] T051 [P] Add cross-platform regression cases for LF/CRLF, temporary paths, case-sensitive variable identity, and portable file handling in `src/env/parser.rs` and `tests/cli.rs`
-- [ ] T052 [P] Review all test fixtures for synthetic-only environment values and add explicit redaction regression assertions for representative secret-bearing inputs in `tests/cli.rs`
-- [ ] T053 Execute every scenario documented in `specs/001-env-validation/quickstart.md` and update only that file if observed command examples or expected outcomes need correction
-- [ ] T054 Run `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`, fixing any violations in `Cargo.toml`, `src/`, and `tests/` without changing the published contracts
-- [ ] T055 Audit dependency/API usage against the design constraints in `Cargo.toml` and `src/env/parser.rs`, ensuring Envcheck uses only dotenv scanning/tokenization and never dotenv expansion, evaluation, decryption, environment injection, or network-capable behavior
+- [ ] T052 [P] Add a GitHub Actions CI matrix in `.github/workflows/ci.yml` that runs the Envcheck test suite on `ubuntu-latest`, `macos-latest`, and `windows-latest`, so SC-007 is demonstrated on all three supported operating systems before release
+- [ ] T053 Review all test fixtures for synthetic-only environment values and add explicit redaction plus byte-for-byte read-only regression assertions in `tests/cli.rs`, proving `.env`, `.env.example`, and `.env.schema` remain unchanged after representative successful and failing invocations
+- [ ] T054 Execute every scenario documented in `specs/001-env-validation/quickstart.md` and update only that file if observed command examples or expected outcomes need correction
+- [ ] T055 Run `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`, fixing any violations in `Cargo.toml`, `src/`, and `tests/` without changing the published contracts
+- [ ] T056 Audit dependency/API usage against the design constraints in `Cargo.toml` and `src/env/parser.rs`, ensuring Envcheck uses only dotenv scanning/tokenization and never dotenv expansion, evaluation, decryption, environment injection, or network-capable behavior
 
 **Checkpoint**: All constitution quality gates and documented end-to-end scenarios pass.
 
@@ -193,7 +194,7 @@ Setup -> Foundation -> US1 --------------------┐
 
 - **US1 (P1)**: Independent after Foundation.
 - **US2 (P1)**: Independent after Foundation for valid explicit schema flows.
-- **US3 (P2)**: Extends US2's schema parser/model with strict invalid-definition handling.
+- **US3 (P2)**: Extends US2's schema parser/model with strict invalid-definition handling and is a mandatory correctness/release gate; no public MVP or release may stop after US2.
 - **US4 (P2)**: Integrates the two validator modes into final discovery, exit, stream, security, and deterministic-output semantics.
 
 ### Within Each User Story
@@ -210,7 +211,7 @@ Setup -> Foundation -> US1 --------------------┐
 - In US1, T013 can be authored while T014 is prepared because they target different files.
 - In US2, T018–T024 are parallel test-authoring opportunities across separate modules; T026, T028–T033 are parallel implementation opportunities after their respective tests and shared model contracts are settled.
 - In US3, T036/T037 and T038 target separate parser/rule concerns and can proceed in parallel before the schema-validation implementation is consolidated.
-- Cross-platform/security regression work T051 and T052 can proceed in parallel before the final quickstart and quality-gate tasks.
+- Cross-platform regression work T051 and CI-matrix setup T052 can proceed in parallel; security/read-only regression T053 follows once representative CLI flows exist.
 
 ---
 
@@ -242,15 +243,16 @@ After the relevant tests fail, implement T026 and T028–T033 across their separ
 
 ### MVP First
 
-The requested first implementation contains both P1 stories:
+The requested first implementation centers on both P1 capabilities, but correctness requires US3 before any public release:
 
 1. Complete Phase 1: Setup.
 2. Complete Phase 2: Foundational.
 3. Complete Phase 3: US1 — explicit `.env.example` comparison.
 4. Complete Phase 4: US2 — explicit valid `.env.schema` validation for `string`, `integer`, `float`, and `boolean`.
-5. **STOP AND VALIDATE** both P1 stories independently before adding P2 hardening/integration behavior.
+5. Complete Phase 5: US3 — strict rejection of malformed, unsupported, or semantically invalid schemas.
+6. **STOP AND VALIDATE** US1, US2, and US3 independently before treating the result as a release candidate.
 
-This produces the smallest release candidate that satisfies the user's explicitly requested first-implementation capabilities. US3 and US4 then harden schema definitions and complete automatic discovery/public CLI behavior required by the full feature specification.
+US1 and US2 remain the feature-focus of the first implementation, while US3 is a mandatory safety/correctness gate rather than optional later hardening. US4 then completes automatic discovery and the full public CLI integration behavior.
 
 ### Incremental Delivery
 

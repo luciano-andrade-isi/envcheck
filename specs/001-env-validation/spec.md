@@ -98,6 +98,9 @@ variable-level errors without exposing the actual values.
    prefixed variable is treated as the declared environment variable.
 11. **Given** a value contains `${NAME}` syntax, **When** validation runs, **Then** the literal parsed
     value is validated and no interpolation is performed.
+12. **Given** a string value contains a multibyte UTF-8 character such as `é` and the schema
+    requires `min_length = 1` and `max_length = 1`, **When** validation runs, **Then** the value is
+    accepted because string length is measured in Unicode scalar values rather than UTF-8 bytes.
 
 ---
 
@@ -176,6 +179,7 @@ the selected definition, diagnostic severity, and process success/failure semant
 - Float input may use finite decimal or scientific notation; `NaN` and positive or negative infinity
   are invalid.
 - A string is shorter or longer than the declared length boundaries by exactly one character.
+- A string contains multibyte UTF-8 characters; length is counted in Unicode scalar values, not bytes.
 - An `allowed` set contains values incompatible with the variable's declared type.
 - `min` is greater than `max`, or `min_length` is greater than `max_length`.
 - A schema constraint uses an invalid value type, such as a negative string length.
@@ -263,7 +267,8 @@ the selected definition, diagnostic severity, and process success/failure semant
   integers; for a `float` variable they MUST represent numeric values.
 - **FR-035**: Numeric `min` and `max` bounds MUST be inclusive.
 - **FR-036**: `min_length` and `max_length` MUST be valid only for `string` variables and MUST be
-  non-negative whole numbers.
+  non-negative whole numbers. String length MUST be measured in Unicode scalar values (equivalent to
+  Rust `str::chars().count()` semantics), not UTF-8 bytes.
 - **FR-037**: `pattern` MUST be valid only for `string` variables.
 - **FR-038**: An invalid regular expression in `pattern` MUST make the schema invalid.
 - **FR-039**: `allowed` MAY restrict any supported scalar type, and each allowed entry MUST be
