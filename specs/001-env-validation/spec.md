@@ -101,6 +101,13 @@ variable-level errors without exposing the actual values.
 12. **Given** a string value contains a multibyte UTF-8 character such as `é` and the schema
     requires `min_length = 1` and `max_length = 1`, **When** validation runs, **Then** the value is
     accepted because string length is measured in Unicode scalar values rather than UTF-8 bytes.
+13. **Given** an integer or float variable defines `min` and `max`, **When** validation checks values
+    exactly at `min` or `max`, **Then** they are accepted; values immediately below `min` or immediately
+    above `max` are rejected because numeric boundaries are inclusive.
+14. **Given** a string variable defines `min_length` and `max_length`, **When** validation checks string
+    lengths exactly at either boundary, **Then** they are accepted; a string one Unicode scalar value
+    below `min_length` or one Unicode scalar value above `max_length` is rejected because string-length
+    boundaries are inclusive.
 
 ---
 
@@ -271,8 +278,12 @@ the selected definition, diagnostic severity, and process success/failure semant
   Rust `str::chars().count()` semantics), not UTF-8 bytes.
 - **FR-037**: `pattern` MUST be valid only for `string` variables.
 - **FR-038**: An invalid regular expression in `pattern` MUST make the schema invalid.
-- **FR-039**: `allowed` MAY restrict any supported scalar type, and each allowed entry MUST be
-  compatible with the variable's declared type.
+- **FR-039**: `allowed` MAY restrict any supported scalar type. String variables MUST accept only TOML
+  string entries; integer variables MUST accept only TOML integer entries; float variables MUST accept
+  TOML integer entries or finite TOML float entries; and boolean variables MUST accept only TOML boolean
+  entries. Incompatible entries MUST make the schema invalid rather than being ignored or coerced, and
+  no implicit string, numeric, or boolean coercion is permitted beyond the explicitly accepted TOML
+  scalar forms above.
 - **FR-040**: String comparisons against `allowed` MUST be case-sensitive.
 - **FR-041**: A schema MUST be rejected when a constraint is incompatible with the declared variable
   type, has an invalid constraint value type, or defines contradictory bounds such as `min > max` or
@@ -282,10 +293,13 @@ the selected definition, diagnostic severity, and process success/failure semant
 
 - **FR-042**: String variables MUST be validated as parsed dotenv text and MUST honor applicable
   length, allowed-value, and pattern constraints.
-- **FR-043**: Integer variables MUST accept only valid integer representations and MUST reject values
-  that require floating-point interpretation.
-- **FR-044**: Float variables MUST accept finite decimal and scientific-notation numeric
-  representations. `NaN`, positive infinity, and negative infinity MUST be rejected.
+- **FR-043**: Integer variables MUST be parsed as signed 64-bit integers and MUST fit the Rust `i64`
+  range (`-2^63` through `2^63 - 1`). Floating-point notation MUST NOT be accepted for integer
+  variables, and integer representations outside the `i64` range MUST be rejected as invalid.
+- **FR-044**: Float variables MUST be parsed using finite IEEE-754 64-bit floating-point (`f64`)
+  semantics. Decimal and scientific-notation representations MUST be accepted when they can be
+  represented as a finite `f64`. `NaN`, positive infinity, negative infinity, and any representation
+  that cannot be represented as a finite `f64` MUST be rejected.
 - **FR-045**: Boolean variables MUST accept only `true` and `false`, matched case-insensitively.
 - **FR-046**: Boolean variables MUST reject numeric and convenience aliases including `1`, `0`,
   `yes`, `no`, `on`, and `off`.
@@ -297,7 +311,11 @@ the selected definition, diagnostic severity, and process success/failure semant
 
 #### Diagnostics, exit semantics, and safety
 
-- **FR-050**: Validation output MUST distinguish errors, warnings, and successful validation.
+- **FR-050**: Validation output MUST distinguish errors, warnings, and successful validation. Dotenv
+  parsing failures and schema definition or parsing failures MUST produce actionable file-level
+  diagnostics that identify the affected file, provide a safe reason for the failure, and include line
+  and column when that information is available. Such diagnostics MUST NOT include actual values read
+  from the target `.env` file.
 - **FR-051**: Variable-level validation errors MUST identify the variable name, violated rule, and
   expected type or constraint when applicable.
 - **FR-052**: Validation diagnostics MUST NOT display the actual target environment-variable value by
