@@ -13,6 +13,7 @@
 ### Session 2026-09-17
 
 - Q: How should Envcheck handle a non-empty, non-comment line that cannot be parsed as a valid dotenv declaration? → A: Treat it as a parsing error and fail validation.
+- Q: Should variable names be compared case-sensitively across `.env`, `.env.example`, and `.env.schema`? → A: Yes. Variable names are case-sensitive on all supported platforms.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -45,6 +46,8 @@ missing keys and duplicate declarations are errors while target-only keys are wa
 6. **Given** a target or example file contains a non-empty, non-comment line that is not a valid
    dotenv declaration, **When** validation runs, **Then** a parsing error is reported and validation
    fails rather than ignoring the line.
+7. **Given** one file declares `PORT` and another declares `port`, **When** validation compares
+   variable names, **Then** they are treated as distinct variables on every supported platform.
 
 ---
 
@@ -151,6 +154,7 @@ the selected definition, diagnostic severity, and process success/failure semant
 - A required schema variable exists with an empty value.
 - A quoted value contains spaces, `#`, or `=` characters that are part of the value.
 - A variable name occurs multiple times with different values; duplication remains an error.
+- Variable names that differ only by letter case, such as `PORT` and `port`, are distinct.
 - Integer and float values occur exactly at minimum or maximum boundaries.
 - Integer input contains decimal notation and must not be accepted as an integer.
 - Float input uses a valid floating-point numeric representation.
@@ -193,7 +197,8 @@ the selected definition, diagnostic severity, and process success/failure semant
   line that cannot be parsed as a valid dotenv declaration MUST produce a parsing error and cause
   validation to fail rather than being ignored.
 - **FR-011**: The parser MUST distinguish a missing variable from a declared variable with an empty
-  value.
+  value. Variable names MUST be treated as case-sensitive identifiers for parsing, duplicate
+  detection, example-file matching, and schema matching on Linux, macOS, and Windows.
 - **FR-012**: Duplicate variable declarations in the target `.env` MUST produce a validation error.
 - **FR-013**: Duplicate variable declarations in `.env.example` MUST produce a validation error.
 - **FR-014**: Duplicate declarations MUST NOT use first-value-wins or last-value-wins semantics for
