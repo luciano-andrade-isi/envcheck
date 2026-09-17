@@ -1,5 +1,13 @@
 // Placeholder module for pattern rules. Behavior begins in later phases.
 
+use regex::Regex;
+
+// T034 will orchestrate pattern diagnostics; matching itself adds no implicit anchors.
+#[allow(dead_code)]
+pub(crate) fn matches_pattern(value: &str, pattern: &Regex) -> bool {
+    pattern.is_match(value)
+}
+
 #[cfg(test)]
 mod tests {
     use regex::Regex;

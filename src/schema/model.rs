@@ -1,4 +1,49 @@
-// Placeholder module for schema data structures. Behavior begins in Phase 4.
+// T034/T035 intentionally wire these schema types later; this phase defines the model first.
+#![allow(dead_code)]
+
+use std::collections::BTreeMap;
+
+use serde::Deserialize;
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub(crate) struct SchemaDefinition {
+    pub(crate) version: u32,
+    pub(crate) variables: BTreeMap<String, VariableRule>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum VariableType {
+    String,
+    Integer,
+    Float,
+    Boolean,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub(crate) struct VariableRule {
+    #[serde(rename = "type")]
+    pub(crate) r#type: VariableType,
+    #[serde(default)]
+    pub(crate) required: bool,
+    #[serde(default)]
+    pub(crate) allow_empty: bool,
+    pub(crate) min: Option<SchemaScalar>,
+    pub(crate) max: Option<SchemaScalar>,
+    pub(crate) min_length: Option<u64>,
+    pub(crate) max_length: Option<u64>,
+    pub(crate) allowed: Option<Vec<SchemaScalar>>,
+    pub(crate) pattern: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum SchemaScalar {
+    String(String),
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+}
 
 #[cfg(test)]
 mod tests {

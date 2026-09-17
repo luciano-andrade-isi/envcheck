@@ -74,6 +74,47 @@ fn add_duplicate_diagnostics(
     }
 }
 
+// T034 will orchestrate this rule; this phase implements and unit-tests it independently.
+#[allow(dead_code)]
+pub(crate) fn validate_schema_presence(
+    variable: &str,
+    entry: Option<&crate::env::EnvEntry>,
+    required: bool,
+    allow_empty: bool,
+) -> (ValidationResult, bool) {
+    let mut diagnostics = Vec::new();
+
+    let Some(entry) = entry else {
+        if required {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: RuleCode::MissingRequired,
+                variable: Some(variable.to_owned()),
+                rule: "required variable is missing".to_owned(),
+                expected: Some("variable to be present".to_owned()),
+                line: None,
+            });
+        }
+        return (ValidationResult { diagnostics }, true);
+    };
+
+    if entry.value.is_empty() {
+        if !allow_empty {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: RuleCode::EmptyNotAllowed,
+                variable: Some(variable.to_owned()),
+                rule: "empty value is not allowed".to_owned(),
+                expected: Some("a non-empty value".to_owned()),
+                line: Some(entry.line),
+            });
+        }
+        return (ValidationResult { diagnostics }, true);
+    }
+
+    (ValidationResult { diagnostics }, false)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;

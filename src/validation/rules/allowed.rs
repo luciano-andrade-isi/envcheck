@@ -1,5 +1,35 @@
 // Placeholder module for allowed-value rules. Behavior begins in later phases.
 
+use crate::schema::model::{SchemaScalar, VariableType};
+
+// Exact finite-f64 equality is the specified `allowed` contract for float values.
+#[allow(clippy::float_cmp, dead_code)]
+pub(crate) fn is_allowed(
+    value: &SchemaScalar,
+    allowed: &[SchemaScalar],
+    variable_type: VariableType,
+) -> bool {
+    match (variable_type, value) {
+        (VariableType::String, SchemaScalar::String(value)) => allowed.iter().any(
+            |candidate| matches!(candidate, SchemaScalar::String(candidate) if candidate == value),
+        ),
+        (VariableType::Integer, SchemaScalar::Integer(value)) => allowed.iter().any(
+            |candidate| matches!(candidate, SchemaScalar::Integer(candidate) if candidate == value),
+        ),
+        (VariableType::Float, SchemaScalar::Float(value)) if value.is_finite() => {
+            allowed.iter().any(|candidate| match candidate {
+                SchemaScalar::Integer(candidate) => (*candidate as f64) == *value,
+                SchemaScalar::Float(candidate) => candidate.is_finite() && *candidate == *value,
+                SchemaScalar::String(_) | SchemaScalar::Boolean(_) => false,
+            })
+        }
+        (VariableType::Boolean, SchemaScalar::Boolean(value)) => allowed.iter().any(
+            |candidate| matches!(candidate, SchemaScalar::Boolean(candidate) if candidate == value),
+        ),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::schema::model::{SchemaScalar, VariableType};

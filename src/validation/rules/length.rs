@@ -1,5 +1,28 @@
 // Placeholder module for string-length rules. Behavior begins in later phases.
 
+use crate::validation::error::RuleCode;
+
+// T034 will orchestrate length rules; counting uses Unicode scalar values by contract.
+#[allow(dead_code)]
+pub(crate) fn validate_string_length(
+    value: &str,
+    min_length: Option<u64>,
+    max_length: Option<u64>,
+) -> Vec<RuleCode> {
+    let length =
+        u64::try_from(value.chars().count()).expect("supported target usize values fit within u64");
+    let mut violations = Vec::new();
+
+    if min_length.is_some_and(|minimum| length < minimum) {
+        violations.push(RuleCode::TooShort);
+    }
+    if max_length.is_some_and(|maximum| length > maximum) {
+        violations.push(RuleCode::TooLong);
+    }
+
+    violations
+}
+
 #[cfg(test)]
 mod tests {
     use crate::validation::error::RuleCode;

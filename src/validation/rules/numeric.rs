@@ -1,5 +1,41 @@
 // Placeholder module for numeric rules. Behavior begins in later phases.
 
+use crate::validation::error::RuleCode;
+
+// T034 will orchestrate numeric rules; integer comparisons intentionally remain i64.
+#[allow(dead_code)]
+pub(crate) fn validate_integer_bounds(
+    value: i64,
+    min: Option<i64>,
+    max: Option<i64>,
+) -> Vec<RuleCode> {
+    let mut violations = Vec::new();
+    if min.is_some_and(|minimum| value < minimum) {
+        violations.push(RuleCode::BelowMin);
+    }
+    if max.is_some_and(|maximum| value > maximum) {
+        violations.push(RuleCode::AboveMax);
+    }
+    violations
+}
+
+// T034 will orchestrate numeric rules; callers provide finite f64 values and bounds.
+#[allow(dead_code)]
+pub(crate) fn validate_float_bounds(
+    value: f64,
+    min: Option<f64>,
+    max: Option<f64>,
+) -> Vec<RuleCode> {
+    let mut violations = Vec::new();
+    if min.is_some_and(|minimum| value < minimum) {
+        violations.push(RuleCode::BelowMin);
+    }
+    if max.is_some_and(|maximum| value > maximum) {
+        violations.push(RuleCode::AboveMax);
+    }
+    violations
+}
+
 #[cfg(test)]
 mod tests {
     use crate::validation::error::RuleCode;

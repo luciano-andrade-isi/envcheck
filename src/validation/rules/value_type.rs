@@ -1,5 +1,36 @@
 // Placeholder module for scalar type rules. Behavior begins in later phases.
 
+use crate::schema::model::{SchemaScalar, VariableType};
+use crate::validation::error::RuleCode;
+
+// T034 will orchestrate scalar conversion; this phase validates the rule independently.
+#[allow(dead_code)]
+pub(crate) fn parse_scalar(
+    value: &str,
+    variable_type: VariableType,
+) -> Result<SchemaScalar, RuleCode> {
+    match variable_type {
+        VariableType::String => Ok(SchemaScalar::String(value.to_owned())),
+        VariableType::Integer => value
+            .parse::<i64>()
+            .map(SchemaScalar::Integer)
+            .map_err(|_| RuleCode::TypeMismatch),
+        VariableType::Float => value
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(SchemaScalar::Float)
+            .ok_or(RuleCode::TypeMismatch),
+        VariableType::Boolean if value.eq_ignore_ascii_case("true") => {
+            Ok(SchemaScalar::Boolean(true))
+        }
+        VariableType::Boolean if value.eq_ignore_ascii_case("false") => {
+            Ok(SchemaScalar::Boolean(false))
+        }
+        VariableType::Boolean => Err(RuleCode::TypeMismatch),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::schema::model::{SchemaScalar, VariableType};
