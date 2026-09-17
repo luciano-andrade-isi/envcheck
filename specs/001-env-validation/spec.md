@@ -14,6 +14,7 @@
 
 - Q: How should Envcheck handle a non-empty, non-comment line that cannot be parsed as a valid dotenv declaration? → A: Treat it as a parsing error and fail validation.
 - Q: Should variable names be compared case-sensitively across `.env`, `.env.example`, and `.env.schema`? → A: Yes. Variable names are case-sensitive on all supported platforms.
+- Q: Which representations should be accepted for `float` values? → A: Accept finite decimal and scientific-notation values; reject `NaN` and positive or negative infinity.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -68,23 +69,26 @@ variable-level errors without exposing the actual values.
 
 1. **Given** a required integer variable has `min = 1` and `max = 65535`, **When** the target contains
    `1` or `65535`, **Then** the value is valid because numeric bounds are inclusive.
-2. **Given** a boolean variable contains any casing of `true` or `false`, **When** validation runs,
+3. **Given** a float variable contains a finite decimal or scientific-notation value such as `1.5`
+   or `1e3`, **When** validation runs, **Then** the value is accepted; `NaN`, positive infinity, and
+   negative infinity are rejected.
+3. **Given** a boolean variable contains any casing of `true` or `false`, **When** validation runs,
    **Then** the value is accepted; values such as `1`, `0`, `yes`, `no`, `on`, and `off` are rejected.
-3. **Given** a required variable is absent, **When** validation runs, **Then** a required-variable
+4. **Given** a required variable is absent, **When** validation runs, **Then** a required-variable
    error is reported.
-4. **Given** an existing variable is empty and `allow_empty = false` or omitted, **When** validation
+5. **Given** an existing variable is empty and `allow_empty = false` or omitted, **When** validation
    runs, **Then** an empty-value error is reported.
-5. **Given** an existing variable is empty and `allow_empty = true`, **When** validation runs, **Then**
+6. **Given** an existing variable is empty and `allow_empty = true`, **When** validation runs, **Then**
    the empty value is accepted without applying type-specific or value-specific constraints.
-6. **Given** a string variable defines an `allowed` set, **When** its value is outside that set,
+7. **Given** a string variable defines an `allowed` set, **When** its value is outside that set,
    **Then** a validation error is reported; string matching is case-sensitive.
-7. **Given** a string variable defines a valid regular-expression pattern, **When** its value does not
+8. **Given** a string variable defines a valid regular-expression pattern, **When** its value does not
    match, **Then** a pattern violation is reported.
-8. **Given** a variable contains a quoted dotenv value, **When** validation runs, **Then** validation
+9. **Given** a variable contains a quoted dotenv value, **When** validation runs, **Then** validation
    uses the parsed value without surrounding quote characters.
-9. **Given** a dotenv line uses a supported `export` prefix, **When** validation runs, **Then** the
+10. **Given** a dotenv line uses a supported `export` prefix, **When** validation runs, **Then** the
    prefixed variable is treated as the declared environment variable.
-10. **Given** a value contains `${NAME}` syntax, **When** validation runs, **Then** the literal parsed
+11. **Given** a value contains `${NAME}` syntax, **When** validation runs, **Then** the literal parsed
     value is validated and no interpolation is performed.
 
 ---
@@ -157,7 +161,8 @@ the selected definition, diagnostic severity, and process success/failure semant
 - Variable names that differ only by letter case, such as `PORT` and `port`, are distinct.
 - Integer and float values occur exactly at minimum or maximum boundaries.
 - Integer input contains decimal notation and must not be accepted as an integer.
-- Float input uses a valid floating-point numeric representation.
+- Float input may use finite decimal or scientific notation; `NaN` and positive or negative infinity
+  are invalid.
 - A string is shorter or longer than the declared length boundaries by exactly one character.
 - An `allowed` set contains values incompatible with the variable's declared type.
 - `min` is greater than `max`, or `min_length` is greater than `max_length`.
@@ -259,7 +264,8 @@ the selected definition, diagnostic severity, and process success/failure semant
   length, allowed-value, and pattern constraints.
 - **FR-043**: Integer variables MUST accept only valid integer representations and MUST reject values
   that require floating-point interpretation.
-- **FR-044**: Float variables MUST accept valid floating-point numeric representations.
+- **FR-044**: Float variables MUST accept finite decimal and scientific-notation numeric
+  representations. `NaN`, positive infinity, and negative infinity MUST be rejected.
 - **FR-045**: Boolean variables MUST accept only `true` and `false`, matched case-insensitively.
 - **FR-046**: Boolean variables MUST reject numeric and convenience aliases including `1`, `0`,
   `yes`, `no`, `on`, and `off`.
@@ -352,6 +358,8 @@ the selected definition, diagnostic severity, and process success/failure semant
 - `allowed` uses the declared scalar type for comparison; string entries are case-sensitive, numeric
   entries use numeric equality, and boolean entries use boolean meaning after accepted boolean
   parsing.
+- Float parsing accepts only finite values; decimal and scientific notation are supported, while
+  `NaN` and infinities are rejected.
 - Dotenv parsing follows common semantics for comments, blank lines, quoted values, and `export`
   prefixes, while interpolation is deliberately disabled. Non-empty, non-comment lines that are not
   valid dotenv declarations are errors rather than ignored input.
