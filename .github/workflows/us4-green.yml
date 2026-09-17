@@ -1,0 +1,403 @@
+name: US4 GREEN
+on:
+  push:
+    branches: [chore/init-spec-kit]
+    paths: ['.github/workflows/us4-green.yml']
+permissions:
+  contents: write
+jobs:
+  implement-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/init-spec-kit
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Preflight prerequisites, checklist gate, and RED checkpoint
+        run: |
+          set -euo pipefail
+          test ! -e .specify/extensions.yml
+          bash .specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for path in sorted(Path('specs/001-env-validation/checklists').glob('*.md')):
+              text = path.read_text()
+              total = len(re.findall(r'^- \[(?: |X|x)\] ', text, flags=re.M))
+              checked = len(re.findall(r'^- \[(?:X|x)\] ', text, flags=re.M))
+              unchecked = len(re.findall(r'^- \[ \] ', text, flags=re.M))
+              print(f'{path.name}: total={total} checked={checked} unchecked={unchecked}')
+              assert unchecked == 0
+          tasks = Path('specs/001-env-validation/tasks.md').read_text()
+          assert all(f'- [X] T{i:03d}' in tasks for i in range(1, 47))
+          assert all(f'- [ ] T{i:03d}' in tasks for i in range(47, 57))
+          PY
+          set +e
+          cargo test --test cli > /tmp/pre-us4-green.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/pre-us4-green.log
+          test "$status" -ne 0
+          grep -q 'us4_discovery_prefers_sibling_schema_over_sibling_example ... FAILED' /tmp/pre-us4-green.log
+          grep -q 'us4_discovery_falls_back_to_sibling_example_when_schema_is_absent ... FAILED' /tmp/pre-us4-green.log
+          grep -q 'us4_no_discovered_definition_is_exit_three_with_safe_context ... FAILED' /tmp/pre-us4-green.log
+      - name: Implement T047-T050 only
+        run: |
+          set -euo pipefail
+          cat > src/main.rs <<'RS'
+          use std::fmt;
+          use std::fs;
+          use std::path::{Path, PathBuf};
+          use std::process::ExitCode;
+
+          use clap::Parser;
+
+          mod cli;
+          mod env;
+          mod output;
+          mod schema;
+          mod validation;
+
+          pub(crate) const EXIT_SUCCESS: u8 = 0;
+          pub(crate) const EXIT_VALIDATION_ERROR: u8 = 1;
+          pub(crate) const EXIT_INPUT_ERROR: u8 = 3;
+          pub(crate) const EXIT_SCHEMA_ERROR: u8 = 4;
+
+          #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+          pub(crate) enum FailureCategory {
+              Input,
+              Discovery,
+              Dotenv,
+              Schema,
+          }
+
+          impl fmt::Display for FailureCategory {
+              fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                  let name = match self {
+                      Self::Input => "input",
+                      Self::Discovery => "discovery",
+                      Self::Dotenv => "dotenv",
+                      Self::Schema => "schema",
+                  };
+                  formatter.write_str(name)
+              }
+          }
+
+          #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+          pub(crate) enum SafeFailureReason {
+              UnreadableFile,
+              NoValidationDefinition,
+              InvalidDotenvSyntax,
+              InvalidSchemaSyntax,
+              InvalidSchemaDefinition,
+          }
+
+          impl fmt::Display for SafeFailureReason {
+              fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                  let reason = match self {
+                      Self::UnreadableFile => "required file could not be read",
+                      Self::NoValidationDefinition => "no validation definition is available",
+                      Self::InvalidDotenvSyntax => "invalid dotenv syntax",
+                      Self::InvalidSchemaSyntax => "invalid schema syntax",
+                      Self::InvalidSchemaDefinition => "invalid schema definition",
+                  };
+                  formatter.write_str(reason)
+              }
+          }
+
+          #[derive(Clone, Debug, Eq, PartialEq)]
+          pub(crate) struct PreventingFailure {
+              pub(crate) category: FailureCategory,
+              pub(crate) path: PathBuf,
+              pub(crate) reason: SafeFailureReason,
+              pub(crate) line: Option<usize>,
+              pub(crate) column: Option<usize>,
+          }
+
+          #[derive(Clone, Debug, Eq, PartialEq)]
+          enum DefinitionPath {
+              Example(PathBuf),
+              Schema(PathBuf),
+          }
+
+          fn main() -> ExitCode {
+              let cli = cli::Cli::parse();
+
+              match resolve_definition(&cli) {
+                  Ok(DefinitionPath::Example(path)) => run_example(&cli.env_file, &path),
+                  Ok(DefinitionPath::Schema(path)) => run_schema(&cli.env_file, &path),
+                  Err(failure) => preventing_exit(failure),
+              }
+          }
+
+          fn resolve_definition(cli: &cli::Cli) -> Result<DefinitionPath, PreventingFailure> {
+              if let Some(schema_path) = &cli.schema {
+                  return Ok(DefinitionPath::Schema(schema_path.clone()));
+              }
+              if let Some(example_path) = &cli.example {
+                  return Ok(DefinitionPath::Example(example_path.clone()));
+              }
+
+              let target_directory = cli
+                  .env_file
+                  .parent()
+                  .filter(|parent| !parent.as_os_str().is_empty())
+                  .unwrap_or_else(|| Path::new("."));
+              let sibling_schema = target_directory.join(".env.schema");
+              if definition_exists(&sibling_schema)? {
+                  return Ok(DefinitionPath::Schema(sibling_schema));
+              }
+
+              let sibling_example = target_directory.join(".env.example");
+              if definition_exists(&sibling_example)? {
+                  return Ok(DefinitionPath::Example(sibling_example));
+              }
+
+              Err(PreventingFailure {
+                  category: FailureCategory::Discovery,
+                  path: cli.env_file.clone(),
+                  reason: SafeFailureReason::NoValidationDefinition,
+                  line: None,
+                  column: None,
+              })
+          }
+
+          fn definition_exists(path: &Path) -> Result<bool, PreventingFailure> {
+              path.try_exists().map_err(|_| unreadable_failure(path))
+          }
+
+          fn run_example(target_path: &Path, example_path: &Path) -> ExitCode {
+              let target_text = match read_input(target_path) {
+                  Ok(text) => text,
+                  Err(failure) => return preventing_exit(failure),
+              };
+              let example_text = match read_input(example_path) {
+                  Ok(text) => text,
+                  Err(failure) => return preventing_exit(failure),
+              };
+
+              let target = match env::parser::parse_dotenv(target_path, &target_text) {
+                  Ok(document) => document,
+                  Err(error) => return preventing_exit(dotenv_failure(error)),
+              };
+              let example = match env::parser::parse_dotenv(example_path, &example_text) {
+                  Ok(document) => document,
+                  Err(error) => return preventing_exit(dotenv_failure(error)),
+              };
+
+              completed_validation_exit(validation::validator::validate_example(&target, &example))
+          }
+
+          fn run_schema(target_path: &Path, schema_path: &Path) -> ExitCode {
+              let target_text = match read_input(target_path) {
+                  Ok(text) => text,
+                  Err(failure) => return preventing_exit(failure),
+              };
+              let schema_text = match read_input(schema_path) {
+                  Ok(text) => text,
+                  Err(failure) => return preventing_exit(failure),
+              };
+
+              let target = match env::parser::parse_dotenv(target_path, &target_text) {
+                  Ok(document) => document,
+                  Err(error) => return preventing_exit(dotenv_failure(error)),
+              };
+              let schema = match schema::parser::parse_schema(schema_path, &schema_text) {
+                  Ok(schema) => schema,
+                  Err(error) => return preventing_exit(schema_failure(error)),
+              };
+
+              completed_validation_exit(validation::validator::validate_schema(&target, &schema))
+          }
+
+          fn completed_validation_exit(result: validation::ValidationResult) -> ExitCode {
+              let exit = if result.has_errors() {
+                  EXIT_VALIDATION_ERROR
+              } else {
+                  EXIT_SUCCESS
+              };
+              let _ = output::write_validation_stdout(&result);
+              ExitCode::from(exit)
+          }
+
+          fn read_input(path: &Path) -> Result<String, PreventingFailure> {
+              fs::read_to_string(path).map_err(|_| unreadable_failure(path))
+          }
+
+          fn unreadable_failure(path: &Path) -> PreventingFailure {
+              PreventingFailure {
+                  category: FailureCategory::Input,
+                  path: path.to_path_buf(),
+                  reason: SafeFailureReason::UnreadableFile,
+                  line: None,
+                  column: None,
+              }
+          }
+
+          fn dotenv_failure(error: env::parser::DotenvParseError) -> PreventingFailure {
+              PreventingFailure {
+                  category: FailureCategory::Dotenv,
+                  path: error.path,
+                  reason: SafeFailureReason::InvalidDotenvSyntax,
+                  line: error.line,
+                  column: error.column,
+              }
+          }
+
+          fn schema_failure(error: schema::parser::SchemaParseError) -> PreventingFailure {
+              let reason = match error.kind {
+                  schema::parser::SchemaErrorKind::Syntax => SafeFailureReason::InvalidSchemaSyntax,
+                  schema::parser::SchemaErrorKind::Definition => {
+                      SafeFailureReason::InvalidSchemaDefinition
+                  }
+              };
+              PreventingFailure {
+                  category: FailureCategory::Schema,
+                  path: error.path,
+                  reason,
+                  line: error.line,
+                  column: error.column,
+              }
+          }
+
+          fn preventing_exit(failure: PreventingFailure) -> ExitCode {
+              let exit = match failure.category {
+                  FailureCategory::Schema => EXIT_SCHEMA_ERROR,
+                  FailureCategory::Input | FailureCategory::Discovery | FailureCategory::Dotenv => {
+                      EXIT_INPUT_ERROR
+                  }
+              };
+              let _ = output::write_preventing_stderr(&failure);
+              ExitCode::from(exit)
+          }
+          RS
+
+          cat > src/output/mod.rs <<'RS'
+          use std::io::{self, Write};
+
+          use crate::PreventingFailure;
+          use crate::validation::ValidationResult;
+          use crate::validation::error::Diagnostic;
+
+          pub(crate) fn render_diagnostic(diagnostic: &Diagnostic) -> String {
+              let mut rendered = format!("{}: ", diagnostic.severity.as_str());
+              if let Some(variable) = &diagnostic.variable {
+                  rendered.push_str(variable);
+                  rendered.push_str(": ");
+              }
+              rendered.push_str(&diagnostic.rule);
+              if let Some(expected) = &diagnostic.expected {
+                  rendered.push_str(" (expected ");
+                  rendered.push_str(expected);
+                  rendered.push(')');
+              }
+              rendered
+          }
+
+          pub(crate) fn render_validation_result(result: &ValidationResult) -> String {
+              let mut ordered = result.clone();
+              ordered.sort_diagnostics();
+
+              let mut rendered = String::new();
+              for diagnostic in &ordered.diagnostics {
+                  rendered.push_str(&render_diagnostic(diagnostic));
+                  rendered.push('\n');
+              }
+
+              if ordered.has_errors() {
+                  rendered.push_str("summary: environment validation failed\n");
+              } else {
+                  rendered.push_str("ok: environment validation succeeded\n");
+              }
+
+              rendered
+          }
+
+          pub(crate) fn render_preventing_failure(failure: &PreventingFailure) -> String {
+              let mut location = failure.path.display().to_string();
+              if let Some(line) = failure.line {
+                  location.push(':');
+                  location.push_str(&line.to_string());
+                  if let Some(column) = failure.column {
+                      location.push(':');
+                      location.push_str(&column.to_string());
+                  }
+              }
+
+              format!(
+                  "error: {}: {}: {}\n",
+                  failure.category, location, failure.reason
+              )
+          }
+
+          pub(crate) fn write_validation_stdout(result: &ValidationResult) -> io::Result<()> {
+              let rendered = render_validation_result(result);
+              io::stdout().lock().write_all(rendered.as_bytes())
+          }
+
+          pub(crate) fn write_preventing_stderr(failure: &PreventingFailure) -> io::Result<()> {
+              let rendered = render_preventing_failure(failure);
+              io::stderr().lock().write_all(rendered.as_bytes())
+          }
+          RS
+
+          cargo fmt
+          cargo fmt --check
+          git diff --exit-code -- .specify/memory/constitution.md specs/001-env-validation/spec.md specs/001-env-validation/plan.md specs/001-env-validation/contracts specs/001-env-validation/checklists
+      - name: Validate T047-T050 quality gates
+        run: |
+          set -euo pipefail
+          cargo fmt --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test
+          cargo test --test cli
+          cargo test --test cli us4_representative_validation_is_identical_across_exactly_100_runs -- --exact
+      - name: Verify security and architectural boundaries
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          main = Path('src/main.rs').read_text()
+          output = Path('src/output/mod.rs').read_text()
+          env_parser = Path('src/env/parser.rs').read_text()
+          validator = Path('src/validation/validator.rs').read_text()
+          assert 'target_directory.join(".env.schema")' in main
+          assert 'target_directory.join(".env.example")' in main
+          assert main.index('cli.schema') < main.index('target_directory.join(".env.schema")')
+          assert main.index('cli.example') < main.index('target_directory.join(".env.schema")')
+          assert 'std::env::var' not in main
+          assert 'std::env::var' not in env_parser
+          assert 'reqwest' not in main
+          assert 'http://' not in main and 'https://' not in main
+          assert 'clap' not in validator and 'crate::output' not in validator
+          assert 'value:' not in output
+          assert 'PreventingFailure' in output
+          tasks = Path('specs/001-env-validation/tasks.md').read_text()
+          assert '- [ ] T051' in tasks
+          PY
+      - name: Mark T047-T050 and commit implementation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('specs/001-env-validation/tasks.md')
+          text = path.read_text()
+          for task in range(47, 51):
+              old = f'- [ ] T{task:03d}'
+              assert old in text
+              text = text.replace(old, f'- [X] T{task:03d}', 1)
+          for task in range(51, 57):
+              assert f'- [ ] T{task:03d}' in text
+          path.write_text(text)
+          PY
+          test ! -e .specify/extensions.yml
+          git diff --exit-code -- specs/001-env-validation/checklists
+          rm .github/workflows/us4-green.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.rs src/output/mod.rs specs/001-env-validation/tasks.md .github/workflows/us4-green.yml
+          git commit -m "feat: complete envcheck cli validation workflow"
+          git push origin HEAD:chore/init-spec-kit
