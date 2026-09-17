@@ -1,0 +1,64 @@
+name: Apply inline-comment clarification
+
+on:
+  push:
+    branches:
+      - chore/init-spec-kit
+    paths:
+      - .github/workflows/clarify-inline-comments.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update specification
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("specs/001-env-validation/spec.md")
+          text = path.read_text()
+
+          old = "- Q: Which variable names should be considered valid in `.env` and `.env.example`? → A: Names must match `[A-Za-z_][A-Za-z0-9_]*`; the same identifier rule applies to variable names declared by `.env.schema`.\n"
+          new = old + "- Q: How should Envcheck interpret inline comments in unquoted dotenv values? → A: Outside quotes, `#` starts an inline comment only when preceded by whitespace; inside quotes, `#` is part of the value.\n"
+          if old not in text:
+              raise SystemExit("Clarifications insertion point not found")
+          text = text.replace(old, new, 1)
+
+          old = "8. **Given** a variable name starts with a digit or contains characters other than letters, digits,\n   and `_`, **When** the file or schema is parsed, **Then** the identifier is rejected as invalid; a\n   valid name starts with a letter or `_` and continues only with letters, digits, or `_`.\n"
+          new = old + "9. **Given** an unquoted dotenv value is followed by whitespace and `#`, **When** the file is\n   parsed, **Then** the `#` and following text are treated as an inline comment; when `#` appears\n   inside quotes or inside an unquoted value without preceding whitespace, it remains part of the value.\n"
+          if old not in text:
+              raise SystemExit("Acceptance insertion point not found")
+          text = text.replace(old, new, 1)
+
+          old = "- A quoted value contains spaces, `#`, or `=` characters that are part of the value.\n"
+          new = old + "- In an unquoted value, `#` starts an inline comment only when preceded by whitespace; otherwise\n  it remains part of the value.\n"
+          if old not in text:
+              raise SystemExit("Edge-case insertion point not found")
+          text = text.replace(old, new, 1)
+
+          old = "- **FR-015**: Common single-quoted and double-quoted dotenv values MUST be interpreted without their\n  surrounding quote characters.\n"
+          new = "- **FR-015**: Common single-quoted and double-quoted dotenv values MUST be interpreted without their\n  surrounding quote characters. Outside quotes, `#` MUST start an inline comment only when preceded\n  by whitespace. Inside quoted values, and in unquoted values where `#` is not preceded by whitespace,\n  `#` MUST be treated as part of the value.\n"
+          if old not in text:
+              raise SystemExit("FR-015 replacement point not found")
+          text = text.replace(old, new, 1)
+
+          old = "- Dotenv parsing follows common semantics for comments, blank lines, quoted values, and `export`\n  prefixes, while interpolation is deliberately disabled. Non-empty, non-comment lines that are not\n  valid dotenv declarations are errors rather than ignored input.\n"
+          new = old + "- Inline dotenv comments start with `#` only outside quotes and only when preceded by whitespace;\n  otherwise `#` is preserved as part of the parsed value.\n"
+          if old not in text:
+              raise SystemExit("Assumption insertion point not found")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+
+      - name: Commit specification clarification
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add specs/001-env-validation/spec.md
+          git commit -m "docs: clarify inline dotenv comments"
+          git push
