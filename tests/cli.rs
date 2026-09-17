@@ -668,3 +668,345 @@ pattern = "["
         false,
     );
 }
+
+fn run_target_without_definition_flag(target: &Path) -> Output {
+    let mut command = Command::cargo_bin("envcheck").expect("compiled envcheck binary");
+    command.arg(target);
+    command.output().expect("execute envcheck")
+}
+
+#[test]
+fn us4_discovery_prefers_sibling_schema_over_sibling_example() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let schema = directory.path().join(".env.schema");
+    let example = directory.path().join(".env.example");
+    fs::write(&target, "VALUE=synthetic-not-an-integer\n").expect("write target");
+    fs::write(
+        &schema,
+        "version = 1\n[variables.VALUE]\ntype = \"integer\"\nrequired = true\n",
+    )
+    .expect("write schema");
+    fs::write(&example, "VALUE=ignored\n").expect("write example");
+
+    let output = run_target_without_definition_flag(&target);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("VALUE"));
+    assert!(stdout(&output).contains("declared type"));
+    assert!(stderr(&output).is_empty());
+    assert_target_values_redacted(&output, &["synthetic-not-an-integer"]);
+}
+
+#[test]
+fn us4_discovery_falls_back_to_sibling_example_when_schema_is_absent() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let example = directory.path().join(".env.example");
+    fs::write(&target, "APP_NAME=synthetic-app-secret\n").expect("write target");
+    fs::write(&example, "APP_NAME=ignored\nREDIS_URL=ignored\n").expect("write example");
+
+    let output = run_target_without_definition_flag(&target);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("REDIS_URL"));
+    assert!(stderr(&output).is_empty());
+    assert_target_values_redacted(&output, &["synthetic-app-secret"]);
+}
+
+#[test]
+fn us4_explicit_example_overrides_sibling_schema_discovery() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let sibling_schema = directory.path().join(".env.schema");
+    let explicit_example = directory.path().join("explicit.example");
+    fs::write(&target, "VALUE=synthetic-text-secret\n").expect("write target");
+    fs::write(
+        &sibling_schema,
+        "version = 1\n[variables.VALUE]\ntype = \"integer\"\nrequired = true\n",
+    )
+    .expect("write sibling schema");
+    fs::write(&explicit_example, "VALUE=ignored\n").expect("write explicit example");
+
+    let output = run_example(&target, &explicit_example);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("ok: environment validation succeeded"));
+    assert!(stderr(&output).is_empty());
+    assert_target_values_redacted(&output, &["synthetic-text-secret"]);
+}
+
+#[test]
+fn us4_explicit_schema_overrides_sibling_example_discovery() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let sibling_example = directory.path().join(".env.example");
+    let explicit_schema = directory.path().join("explicit.schema");
+    fs::write(&target, "VALUE=42\n").expect("write target");
+    fs::write(&sibling_example, "VALUE=ignored\nMISSING=ignored\n").expect("write sibling example");
+    fs::write(
+        &explicit_schema,
+        "version = 1\n[variables.VALUE]\ntype = \"integer\"\nrequired = true\n",
+    )
+    .expect("write explicit schema");
+
+    let output = run_schema(&target, &explicit_schema);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("ok: environment validation succeeded"));
+    assert!(stderr(&output).is_empty());
+    assert_target_values_redacted(&output, &["42"]);
+}
+
+#[test]
+fn us4_no_discovered_definition_is_exit_three_with_safe_context() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    fs::write(&target, "API_KEY=synthetic-target-secret\n").expect("write target");
+
+    let output = run_target_without_definition_flag(&target);
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains("discovery"));
+    assert!(rendered.contains(&target.display().to_string()));
+    assert!(rendered.contains("no validation definition is available"));
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn us4_unreadable_target_is_exit_three_with_path_and_safe_reason() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join("missing.env");
+    let example = directory.path().join(".env.example");
+    fs::write(&example, "API_KEY=ignored\n").expect("write example");
+
+    let output = run_example(&target, &example);
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains(&target.display().to_string()));
+    assert!(rendered.contains("required file could not be read"));
+}
+
+#[test]
+fn us4_unreadable_explicit_example_is_exit_three_with_path_and_safe_reason() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let example = directory.path().join("missing.example");
+    fs::write(&target, "API_KEY=synthetic-target-secret\n").expect("write target");
+
+    let output = run_example(&target, &example);
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains(&example.display().to_string()));
+    assert!(rendered.contains("required file could not be read"));
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn us4_unreadable_explicit_schema_is_exit_three_with_path_and_safe_reason() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let schema = directory.path().join("missing.schema");
+    fs::write(&target, "API_KEY=synthetic-target-secret\n").expect("write target");
+
+    let output = run_schema(&target, &schema);
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains(&schema.display().to_string()));
+    assert!(rendered.contains("required file could not be read"));
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn us4_mutually_exclusive_definition_flags_are_cli_usage_exit_two() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let example = directory.path().join(".env.example");
+    let schema = directory.path().join(".env.schema");
+    fs::write(&target, "VALUE=synthetic-target-secret\n").expect("write target");
+    fs::write(&example, "VALUE=ignored\n").expect("write example");
+    fs::write(
+        &schema,
+        "version = 1\n[variables.VALUE]\ntype = \"string\"\n",
+    )
+    .expect("write schema");
+
+    let mut command = Command::cargo_bin("envcheck").expect("compiled envcheck binary");
+    let output = command
+        .arg(&target)
+        .arg("--example")
+        .arg(&example)
+        .arg("--schema")
+        .arg(&schema)
+        .output()
+        .expect("execute envcheck");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stdout(&output).is_empty());
+    assert!(!stderr(&output).is_empty());
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn us4_completed_validation_uses_stdout_and_maps_warning_and_error_exits() {
+    let warning_fixture = ExampleFixture::new(
+        "KNOWN=synthetic-known-secret\nEXTRA=synthetic-extra-secret\n",
+        "KNOWN=ignored\n",
+    );
+    let warning_output = run_example(&warning_fixture.target, &warning_fixture.example);
+    assert_eq!(warning_output.status.code(), Some(0));
+    assert!(stdout(&warning_output).contains("warning"));
+    assert!(stdout(&warning_output).contains("ok: environment validation succeeded"));
+    assert!(stderr(&warning_output).is_empty());
+    assert_target_values_redacted(
+        &warning_output,
+        &["synthetic-known-secret", "synthetic-extra-secret"],
+    );
+
+    let error_fixture = ExampleFixture::new(
+        "KNOWN=synthetic-known-secret\n",
+        "KNOWN=ignored\nREQUIRED=ignored\n",
+    );
+    let error_output = run_example(&error_fixture.target, &error_fixture.example);
+    assert_eq!(error_output.status.code(), Some(1));
+    assert!(stdout(&error_output).contains("error"));
+    assert!(stdout(&error_output).contains("REQUIRED"));
+    assert!(stderr(&error_output).is_empty());
+    assert_target_values_redacted(&error_output, &["synthetic-known-secret"]);
+}
+
+#[test]
+fn us4_dotenv_prevention_uses_stderr_safe_context_and_known_line() {
+    let fixture = ExampleFixture::new(
+        "API_KEY=synthetic-target-secret\nnot an assignment\n",
+        "API_KEY=ignored\n",
+    );
+
+    let output = run_example(&fixture.target, &fixture.example);
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains("dotenv"));
+    assert!(rendered.contains(&fixture.target.display().to_string()));
+    assert!(rendered.contains("invalid dotenv syntax"));
+    assert!(rendered.contains(":2"));
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn us4_unreadable_definition_prevention_uses_stderr_safe_context() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let target = directory.path().join(".env");
+    let missing = directory.path().join("missing.example");
+    fs::write(&target, "API_KEY=synthetic-target-secret\n").expect("write target");
+
+    let output = run_example(&target, &missing);
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains("input"));
+    assert!(rendered.contains(&missing.display().to_string()));
+    assert!(rendered.contains("required file could not be read"));
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn us4_toml_syntax_prevention_is_exit_four_with_location_and_redaction() {
+    let fixture = SchemaFixture::new(
+        "VALUE=synthetic-target-secret\n",
+        "version = 1\n[variables.VALUE\ntype = \"string\"\n",
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains("schema"));
+    assert!(rendered.contains(&fixture.schema.display().to_string()));
+    assert!(rendered.contains("invalid schema syntax"));
+    assert_rendered_schema_location(&rendered, &fixture.schema);
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn us4_schema_definition_prevention_is_exit_four_with_safe_context_and_redaction() {
+    let fixture = SchemaFixture::new(
+        "VALUE=synthetic-target-secret\n",
+        "version = 2\n[variables.VALUE]\ntype = \"string\"\n",
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains("schema"));
+    assert!(rendered.contains(&fixture.schema.display().to_string()));
+    assert!(rendered.contains("invalid schema definition"));
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn us4_representative_validation_is_identical_across_exactly_100_runs() {
+    let fixture = SchemaFixture::new(
+        "B=not-a-boolean\nA=5\nZ_EXTRA=synthetic-z-secret\nY_EXTRA=synthetic-y-secret\n",
+        r#"
+version = 1
+[variables.A]
+type = "integer"
+required = true
+min = 10
+
+[variables.B]
+type = "boolean"
+required = true
+"#,
+    );
+
+    let mut baseline: Option<(Option<i32>, Vec<u8>, Vec<u8>)> = None;
+    for iteration in 0..100 {
+        let output = run_schema(&fixture.target, &fixture.schema);
+        let snapshot = (output.status.code(), output.stdout, output.stderr);
+        if let Some(expected) = &baseline {
+            assert_eq!(snapshot, *expected, "run {iteration} differed from run 0");
+        } else {
+            baseline = Some(snapshot);
+        }
+    }
+
+    let (status, stdout_bytes, stderr_bytes) = baseline.expect("100 runs produce baseline");
+    assert_eq!(status, Some(1));
+    assert!(stderr_bytes.is_empty());
+    let rendered = String::from_utf8(stdout_bytes).expect("stdout must be UTF-8");
+    let a_error = rendered.find("error: A:").expect("A error diagnostic");
+    let b_error = rendered.find("error: B:").expect("B error diagnostic");
+    let y_warning = rendered
+        .find("warning: Y_EXTRA:")
+        .expect("Y_EXTRA warning diagnostic");
+    let z_warning = rendered
+        .find("warning: Z_EXTRA:")
+        .expect("Z_EXTRA warning diagnostic");
+    assert!(a_error < b_error);
+    assert!(b_error < y_warning);
+    assert!(y_warning < z_warning);
+    assert!(rendered.contains("configured minimum"));
+    assert!(rendered.contains("declared type"));
+    assert!(rendered.contains("variable is not declared in schema"));
+    for value in ["not-a-boolean", "synthetic-z-secret", "synthetic-y-secret"] {
+        assert!(
+            !rendered.contains(value),
+            "stdout exposed target value: {value}"
+        );
+    }
+}

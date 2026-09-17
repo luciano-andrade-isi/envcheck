@@ -143,9 +143,9 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Tests for User Story 4
 
-- [ ] T044 [US4] Add compiled-CLI tests for automatic discovery beside `<ENV_FILE>` (`.env.schema` before `.env.example`), explicit-path override, no-definition exit `3`, unreadable target/example/schema file exit `3`, and mutually exclusive flags exit `2`; unreadable-file diagnostics must identify the affected path and a safe reason on stderr in `tests/cli.rs`
-- [ ] T045 [US4] Add compiled-CLI tests asserting stdout is used for completed validation and stderr for preventing failures; representative dotenv parse, unreadable-file, TOML parse, and schema-definition failures must render structured safe file context (path, safe reason, optional line/column when available), warnings alone exit `0`, validation errors exit `1`, schema failures exit `4`, and actual target environment values never appear in either stream in `tests/cli.rs`
-- [ ] T046 [US4] Add deterministic-output integration coverage by running the same representative validation exactly 100 times and asserting identical exit code, stdout, stderr, diagnostic content, and diagnostic order across all runs in `tests/cli.rs`
+- [X] T044 [US4] Add compiled-CLI tests for automatic discovery beside `<ENV_FILE>` (`.env.schema` before `.env.example`), explicit-path override, no-definition exit `3`, unreadable target/example/schema file exit `3`, and mutually exclusive flags exit `2`; unreadable-file diagnostics must identify the affected path and a safe reason on stderr in `tests/cli.rs`
+- [X] T045 [US4] Add compiled-CLI tests asserting stdout is used for completed validation and stderr for preventing failures; representative dotenv parse, unreadable-file, TOML parse, and schema-definition failures must render structured safe file context (path, safe reason, optional line/column when available), warnings alone exit `0`, validation errors exit `1`, schema failures exit `4`, and actual target environment values never appear in either stream in `tests/cli.rs`
+- [X] T046 [US4] Add deterministic-output integration coverage by running the same representative validation exactly 100 times and asserting identical exit code, stdout, stderr, diagnostic content, and diagnostic order across all runs in `tests/cli.rs`
 
 ### Implementation for User Story 4
 
