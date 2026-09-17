@@ -1,3 +1,79 @@
+use crate::env::EnvDocument;
+use crate::validation::error::{Diagnostic, RuleCode, Severity};
+use crate::validation::ValidationResult;
+
+pub(crate) fn validate_example_presence(
+    target: &EnvDocument,
+    example: &EnvDocument,
+) -> ValidationResult {
+    let mut diagnostics = Vec::new();
+
+    add_duplicate_diagnostics(target, "target", &mut diagnostics);
+    add_duplicate_diagnostics(example, "example", &mut diagnostics);
+
+    for (key, indexes) in &example.key_index {
+        if target.key_index.contains_key(key) {
+            continue;
+        }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: RuleCode::MissingRequired,
+            variable: Some(key.clone()),
+            rule: "required variable is missing".to_owned(),
+            expected: Some("variable to be present".to_owned()),
+            line: indexes
+                .first()
+                .and_then(|index| example.entries.get(*index))
+                .map(|entry| entry.line),
+        });
+    }
+
+    for (key, indexes) in &target.key_index {
+        if example.key_index.contains_key(key) {
+            continue;
+        }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            code: RuleCode::AdditionalVariable,
+            variable: Some(key.clone()),
+            rule: "variable is not declared in example".to_owned(),
+            expected: None,
+            line: indexes
+                .first()
+                .and_then(|index| target.entries.get(*index))
+                .map(|entry| entry.line),
+        });
+    }
+
+    ValidationResult { diagnostics }
+}
+
+fn add_duplicate_diagnostics(
+    document: &EnvDocument,
+    document_kind: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for (key, indexes) in &document.key_index {
+        if indexes.len() < 2 {
+            continue;
+        }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: RuleCode::DuplicateKey,
+            variable: Some(key.clone()),
+            rule: format!("duplicate variable declaration in {document_kind}"),
+            expected: Some("a single declaration".to_owned()),
+            line: indexes
+                .get(1)
+                .and_then(|index| document.entries.get(*index))
+                .map(|entry| entry.line),
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
