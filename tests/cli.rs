@@ -530,3 +530,141 @@ required = true
         assert_target_values_redacted(&output, &[value]);
     }
 }
+
+fn assert_rendered_schema_location(rendered: &str, path: &Path) {
+    let path_text = path.display().to_string();
+    let (_, suffix) = rendered
+        .split_once(&path_text)
+        .expect("stderr must contain the schema path");
+    let suffix = suffix
+        .strip_prefix(':')
+        .expect("schema path must be followed by parser location");
+    let mut parts = suffix.split(':');
+    let line = parts
+        .next()
+        .expect("line component")
+        .parse::<usize>()
+        .expect("line must be numeric");
+    let column = parts
+        .next()
+        .expect("column component")
+        .parse::<usize>()
+        .expect("column must be numeric");
+    assert!(line > 0);
+    assert!(column > 0);
+}
+
+fn assert_invalid_schema_prevents_validation(schema: &str, expect_location: bool) {
+    let fixture = SchemaFixture::new("VALUE=synthetic-target-secret\n", schema);
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stdout(&output).is_empty());
+    let rendered = stderr(&output);
+    assert!(rendered.contains(&fixture.schema.display().to_string()));
+    assert!(rendered.contains("schema"));
+    assert!(rendered.contains("invalid schema"));
+    if expect_location {
+        assert_rendered_schema_location(&rendered, &fixture.schema);
+    }
+    assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+}
+
+#[test]
+fn invalid_schema_malformed_toml_exits_four_with_location_and_redaction() {
+    assert_invalid_schema_prevents_validation(
+        "version = 1\n[variables.VALUE\ntype = \"string\"\n",
+        true,
+    );
+}
+
+#[test]
+fn invalid_schema_unknown_top_level_property_exits_four() {
+    assert_invalid_schema_prevents_validation(
+        r#"
+version = 1
+unexpected = true
+[variables.VALUE]
+type = "string"
+"#,
+        false,
+    );
+}
+
+#[test]
+fn invalid_schema_unknown_variable_rule_property_exits_four() {
+    assert_invalid_schema_prevents_validation(
+        r#"
+version = 1
+[variables.VALUE]
+type = "string"
+unexpected = true
+"#,
+        false,
+    );
+}
+
+#[test]
+fn invalid_schema_unsupported_version_exits_four() {
+    assert_invalid_schema_prevents_validation(
+        r#"
+version = 2
+[variables.VALUE]
+type = "string"
+"#,
+        false,
+    );
+}
+
+#[test]
+fn invalid_schema_incompatible_constraint_exits_four() {
+    assert_invalid_schema_prevents_validation(
+        r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+min_length = 1
+"#,
+        false,
+    );
+}
+
+#[test]
+fn invalid_schema_contradictory_bounds_exit_four() {
+    assert_invalid_schema_prevents_validation(
+        r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+min = 20
+max = 10
+"#,
+        false,
+    );
+}
+
+#[test]
+fn invalid_schema_incompatible_allowed_entry_exits_four_without_coercion() {
+    assert_invalid_schema_prevents_validation(
+        r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+allowed = ["synthetic-target-secret"]
+"#,
+        false,
+    );
+}
+
+#[test]
+fn invalid_schema_regex_exits_four_instead_of_becoming_target_validation() {
+    assert_invalid_schema_prevents_validation(
+        r#"
+version = 1
+[variables.VALUE]
+type = "string"
+pattern = "["
+"#,
+        false,
+    );
+}

@@ -119,10 +119,10 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Tests for User Story 3
 
-- [ ] T036 [P] [US3] Add schema syntax/strictness tests for malformed TOML, unknown top-level fields, unknown variable-rule fields, missing required schema structure, unsupported types, and unsupported version in `src/schema/parser.rs`; malformed TOML failures must retain the affected schema path, a safe reason, and parser-provided line/column when available, without carrying target values
-- [ ] T037 [P] [US3] Add semantic schema tests for incompatible constraints, wrong constraint scalar kinds, `min > max`, `min_length > max_length`, incompatible typed `allowed` entries (including explicit rejection of coercion between string/integer/float/boolean kinds), invalid variable identifiers, and non-finite float constraints in `src/schema/parser.rs`
-- [ ] T038 [P] [US3] Add invalid-regex schema tests proving regex compilation failure is a schema error rather than a target validation error in `src/validation/rules/pattern.rs`
-- [ ] T039 [US3] Add compiled-CLI integration tests for malformed TOML and invalid schema definitions including unknown properties, unsupported version, incompatible constraints, contradictory bounds, incompatible `allowed`, and invalid regex; assert exit `4`, stderr contains the affected schema path and a safe reason plus line/column when supplied by the parser, and actual target values appear in neither stdout nor stderr in `tests/cli.rs`
+- [X] T036 [P] [US3] Add schema syntax/strictness tests for malformed TOML, unknown top-level fields, unknown variable-rule fields, missing required schema structure, unsupported types, and unsupported version in `src/schema/parser.rs`; malformed TOML failures must retain the affected schema path, a safe reason, and parser-provided line/column when available, without carrying target values
+- [X] T037 [P] [US3] Add semantic schema tests for incompatible constraints, wrong constraint scalar kinds, `min > max`, `min_length > max_length`, incompatible typed `allowed` entries (including explicit rejection of coercion between string/integer/float/boolean kinds), invalid variable identifiers, and non-finite float constraints in `src/schema/parser.rs`
+- [X] T038 [P] [US3] Add invalid-regex schema tests proving regex compilation failure is a schema error rather than a target validation error in `src/validation/rules/pattern.rs`
+- [X] T039 [US3] Add compiled-CLI integration tests for malformed TOML and invalid schema definitions including unknown properties, unsupported version, incompatible constraints, contradictory bounds, incompatible `allowed`, and invalid regex; assert exit `4`, stderr contains the affected schema path and a safe reason plus line/column when supplied by the parser, and actual target values appear in neither stdout nor stderr in `tests/cli.rs`
 
 ### Implementation for User Story 3
 

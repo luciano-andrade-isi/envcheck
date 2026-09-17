@@ -27,3 +27,28 @@ mod tests {
         assert!(!matches_pattern("concatenate", &regex));
     }
 }
+
+#[cfg(test)]
+mod us3_tests {
+    use std::path::Path;
+
+    use crate::schema::parser::parse_schema;
+
+    #[test]
+    fn us3_invalid_regex_is_rejected_as_schema_definition_error() {
+        let error = parse_schema(
+            Path::new("config/.env.schema"),
+            r#"
+version = 1
+[variables.VALUE]
+type = "string"
+pattern = "["
+"#,
+        )
+        .expect_err("invalid regex must invalidate the schema before target validation");
+
+        assert_eq!(error.path, Path::new("config/.env.schema"));
+        let reason = error.reason.to_ascii_lowercase();
+        assert!(reason.contains("regex") || reason.contains("pattern"));
+    }
+}

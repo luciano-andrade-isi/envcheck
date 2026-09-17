@@ -114,3 +114,191 @@ type = "string"
         assert_eq!(error.column, None);
     }
 }
+
+#[cfg(test)]
+mod us3_tests {
+    use std::path::Path;
+
+    use super::{SchemaParseError, parse_schema};
+
+    fn schema_error(input: &str) -> SchemaParseError {
+        parse_schema(Path::new("config/.env.schema"), input).expect_err("schema must be rejected")
+    }
+
+    #[test]
+    fn us3_malformed_toml_preserves_schema_path_safe_reason_and_location() {
+        let error = schema_error("version = 1\n[variables.VALUE\ntype = \"string\"\n");
+
+        assert_eq!(error.path, Path::new("config/.env.schema"));
+        assert!(!error.reason.trim().is_empty());
+        assert!(
+            error.line.is_some(),
+            "TOML parser location should retain line"
+        );
+        assert!(
+            error.column.is_some(),
+            "TOML parser location should retain column"
+        );
+        assert!(!format!("{error:?}").contains("synthetic-target-secret"));
+    }
+
+    #[test]
+    fn us3_unknown_top_level_property_is_rejected() {
+        schema_error(
+            r#"
+version = 1
+unexpected = true
+[variables.VALUE]
+type = "string"
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_unknown_variable_rule_property_is_rejected() {
+        schema_error(
+            r#"
+version = 1
+[variables.VALUE]
+type = "string"
+unexpected = true
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_missing_required_schema_structure_is_rejected() {
+        schema_error("version = 1\n");
+        schema_error(
+            r#"
+[variables.VALUE]
+type = "string"
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_unsupported_variable_type_is_rejected() {
+        schema_error(
+            r#"
+version = 1
+[variables.VALUE]
+type = "array"
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_unsupported_schema_version_is_rejected() {
+        schema_error(
+            r#"
+version = 2
+[variables.VALUE]
+type = "string"
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_incompatible_constraint_for_declared_type_is_rejected() {
+        schema_error(
+            r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+min_length = 1
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_wrong_constraint_scalar_kind_is_rejected() {
+        schema_error(
+            r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+min = 1.5
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_contradictory_numeric_bounds_are_rejected() {
+        schema_error(
+            r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+min = 20
+max = 10
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_contradictory_string_length_bounds_are_rejected() {
+        schema_error(
+            r#"
+version = 1
+[variables.VALUE]
+type = "string"
+min_length = 5
+max_length = 4
+"#,
+        );
+    }
+
+    #[test]
+    fn us3_incompatible_typed_allowed_entries_are_rejected_without_coercion() {
+        for schema in [
+            r#"
+version = 1
+[variables.VALUE]
+type = "string"
+allowed = [1]
+"#,
+            r#"
+version = 1
+[variables.VALUE]
+type = "integer"
+allowed = [1.0]
+"#,
+            r#"
+version = 1
+[variables.VALUE]
+type = "float"
+allowed = ["1.0"]
+"#,
+            r#"
+version = 1
+[variables.VALUE]
+type = "boolean"
+allowed = [1]
+"#,
+        ] {
+            schema_error(schema);
+        }
+    }
+
+    #[test]
+    fn us3_invalid_variable_identifier_is_a_schema_error() {
+        let error = schema_error(
+            r#"
+version = 1
+[variables."BAD-NAME"]
+type = "string"
+"#,
+        );
+        assert!(error.reason.contains("invalid variable name"));
+    }
+
+    #[test]
+    fn us3_non_finite_float_constraints_are_rejected() {
+        for bound in ["inf", "-inf", "nan"] {
+            let schema =
+                format!("version = 1\n[variables.VALUE]\ntype = \"float\"\nmin = {bound}\n");
+            schema_error(&schema);
+        }
+    }
+}
