@@ -20,13 +20,18 @@ pub(crate) fn render_diagnostic(diagnostic: &Diagnostic) -> String {
 }
 
 pub(crate) fn render_validation_result(result: &ValidationResult) -> String {
+    let mut ordered = result.clone();
+    ordered.sort_diagnostics();
+
     let mut rendered = String::new();
-    for diagnostic in &result.diagnostics {
+    for diagnostic in &ordered.diagnostics {
         rendered.push_str(&render_diagnostic(diagnostic));
         rendered.push('\n');
     }
 
-    if !result.has_errors() {
+    if ordered.has_errors() {
+        rendered.push_str("summary: environment validation failed\n");
+    } else {
         rendered.push_str("ok: environment validation succeeded\n");
     }
 
