@@ -1,12 +1,18 @@
-// T034/T035 will consume this parser; US3 adds strict semantic schema rejection later.
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 
-use super::model::SchemaDefinition;
+use regex::Regex;
+
+use super::model::{SchemaDefinition, SchemaScalar, VariableRule, VariableType};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SchemaErrorKind {
+    Syntax,
+    Definition,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SchemaParseError {
+    pub(crate) kind: SchemaErrorKind,
     pub(crate) path: PathBuf,
     pub(crate) reason: String,
     pub(crate) line: Option<usize>,
@@ -14,31 +20,234 @@ pub(crate) struct SchemaParseError {
 }
 
 pub(crate) fn parse_schema(path: &Path, input: &str) -> Result<SchemaDefinition, SchemaParseError> {
+    toml::from_str::<toml::Value>(input).map_err(|error| syntax_error(path, input, &error))?;
+
     let schema = toml::from_str::<SchemaDefinition>(input)
-        .map_err(|error| toml_error(path, input, &error))?;
+        .map_err(|error| definition_deserialization_error(path, input, &error))?;
 
-    for variable in schema.variables.keys() {
-        if !is_valid_variable_name(variable) {
-            return Err(SchemaParseError {
-                path: path.to_path_buf(),
-                reason: format!("invalid variable name `{variable}`"),
-                line: None,
-                column: None,
-            });
-        }
-    }
-
+    validate_schema_definition(path, &schema)?;
     Ok(schema)
 }
 
-fn toml_error(path: &Path, input: &str, error: &toml::de::Error) -> SchemaParseError {
-    let location = error.span().map(|span| line_and_column(input, span.start));
+fn validate_schema_definition(
+    path: &Path,
+    schema: &SchemaDefinition,
+) -> Result<(), SchemaParseError> {
+    if schema.version != 1 {
+        return Err(definition_error(path, "unsupported schema version"));
+    }
 
+    for (variable, rule) in &schema.variables {
+        if !is_valid_variable_name(variable) {
+            return Err(definition_error(
+                path,
+                format!("invalid variable name `{variable}`"),
+            ));
+        }
+        validate_rule(path, variable, rule)?;
+    }
+
+    Ok(())
+}
+
+fn validate_rule(path: &Path, variable: &str, rule: &VariableRule) -> Result<(), SchemaParseError> {
+    match rule.r#type {
+        VariableType::String => validate_string_rule(path, variable, rule)?,
+        VariableType::Integer => validate_integer_rule(path, variable, rule)?,
+        VariableType::Float => validate_float_rule(path, variable, rule)?,
+        VariableType::Boolean => validate_boolean_rule(path, variable, rule)?,
+    }
+
+    if let Some(allowed) = rule.allowed.as_deref() {
+        for item in allowed {
+            let compatible = match rule.r#type {
+                VariableType::String => matches!(item, SchemaScalar::String(_)),
+                VariableType::Integer => matches!(item, SchemaScalar::Integer(_)),
+                VariableType::Float => match item {
+                    SchemaScalar::Integer(_) => true,
+                    SchemaScalar::Float(value) => value.is_finite(),
+                    _ => false,
+                },
+                VariableType::Boolean => matches!(item, SchemaScalar::Boolean(_)),
+            };
+            if !compatible {
+                return Err(definition_error(
+                    path,
+                    format!("incompatible allowed entry for `{variable}`"),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_string_rule(
+    path: &Path,
+    variable: &str,
+    rule: &VariableRule,
+) -> Result<(), SchemaParseError> {
+    if rule.min.is_some() || rule.max.is_some() {
+        return Err(incompatible_constraint(path, variable, "min/max"));
+    }
+    if let (Some(min), Some(max)) = (rule.min_length, rule.max_length)
+        && min > max
+    {
+        return Err(definition_error(
+            path,
+            format!("min_length exceeds max_length for `{variable}`"),
+        ));
+    }
+    if let Some(pattern) = rule.pattern.as_deref()
+        && Regex::new(pattern).is_err()
+    {
+        return Err(definition_error(
+            path,
+            format!("invalid regex pattern for `{variable}`"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_integer_rule(
+    path: &Path,
+    variable: &str,
+    rule: &VariableRule,
+) -> Result<(), SchemaParseError> {
+    if rule.min_length.is_some() || rule.max_length.is_some() || rule.pattern.is_some() {
+        return Err(incompatible_constraint(path, variable, "string constraint"));
+    }
+
+    let min = match rule.min.as_ref() {
+        Some(SchemaScalar::Integer(value)) => Some(*value),
+        Some(_) => {
+            return Err(definition_error(
+                path,
+                format!("integer min has incompatible scalar type for `{variable}`"),
+            ));
+        }
+        None => None,
+    };
+    let max = match rule.max.as_ref() {
+        Some(SchemaScalar::Integer(value)) => Some(*value),
+        Some(_) => {
+            return Err(definition_error(
+                path,
+                format!("integer max has incompatible scalar type for `{variable}`"),
+            ));
+        }
+        None => None,
+    };
+    if let (Some(min), Some(max)) = (min, max)
+        && min > max
+    {
+        return Err(definition_error(
+            path,
+            format!("min exceeds max for `{variable}`"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_float_rule(
+    path: &Path,
+    variable: &str,
+    rule: &VariableRule,
+) -> Result<(), SchemaParseError> {
+    if rule.min_length.is_some() || rule.max_length.is_some() || rule.pattern.is_some() {
+        return Err(incompatible_constraint(path, variable, "string constraint"));
+    }
+
+    let min = float_constraint(path, variable, "min", rule.min.as_ref())?;
+    let max = float_constraint(path, variable, "max", rule.max.as_ref())?;
+    if let (Some(min), Some(max)) = (min, max)
+        && min > max
+    {
+        return Err(definition_error(
+            path,
+            format!("min exceeds max for `{variable}`"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_boolean_rule(
+    path: &Path,
+    variable: &str,
+    rule: &VariableRule,
+) -> Result<(), SchemaParseError> {
+    if rule.min.is_some()
+        || rule.max.is_some()
+        || rule.min_length.is_some()
+        || rule.max_length.is_some()
+        || rule.pattern.is_some()
+    {
+        return Err(incompatible_constraint(path, variable, "value constraint"));
+    }
+    Ok(())
+}
+
+fn float_constraint(
+    path: &Path,
+    variable: &str,
+    name: &str,
+    value: Option<&SchemaScalar>,
+) -> Result<Option<f64>, SchemaParseError> {
+    match value {
+        None => Ok(None),
+        Some(SchemaScalar::Integer(value)) => Ok(Some(*value as f64)),
+        Some(SchemaScalar::Float(value)) if value.is_finite() => Ok(Some(*value)),
+        Some(SchemaScalar::Float(_)) => Err(definition_error(
+            path,
+            format!("non-finite float {name} for `{variable}`"),
+        )),
+        Some(_) => Err(definition_error(
+            path,
+            format!("float {name} has incompatible scalar type for `{variable}`"),
+        )),
+    }
+}
+
+fn incompatible_constraint(path: &Path, variable: &str, name: &str) -> SchemaParseError {
+    definition_error(
+        path,
+        format!("incompatible {name} for declared type of `{variable}`"),
+    )
+}
+
+fn syntax_error(path: &Path, input: &str, error: &toml::de::Error) -> SchemaParseError {
+    let location = error.span().map(|span| line_and_column(input, span.start));
     SchemaParseError {
+        kind: SchemaErrorKind::Syntax,
         path: path.to_path_buf(),
-        reason: error.message().to_owned(),
+        reason: "malformed TOML schema".to_owned(),
         line: location.map(|(line, _)| line),
         column: location.map(|(_, column)| column),
+    }
+}
+
+fn definition_deserialization_error(
+    path: &Path,
+    input: &str,
+    error: &toml::de::Error,
+) -> SchemaParseError {
+    let location = error.span().map(|span| line_and_column(input, span.start));
+    SchemaParseError {
+        kind: SchemaErrorKind::Definition,
+        path: path.to_path_buf(),
+        reason: "invalid schema structure, property, or scalar type".to_owned(),
+        line: location.map(|(line, _)| line),
+        column: location.map(|(_, column)| column),
+    }
+}
+
+fn definition_error(path: &Path, reason: impl Into<String>) -> SchemaParseError {
+    SchemaParseError {
+        kind: SchemaErrorKind::Definition,
+        path: path.to_path_buf(),
+        reason: reason.into(),
+        line: None,
+        column: None,
     }
 }
 

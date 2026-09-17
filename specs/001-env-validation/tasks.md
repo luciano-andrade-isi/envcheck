@@ -126,10 +126,10 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Implementation for User Story 3
 
-- [ ] T040 [US3] Apply strict Serde deserialization (`deny_unknown_fields`) to top-level schema and variable-rule structures in `src/schema/model.rs`
-- [ ] T041 [US3] Implement complete schema semantic validation in `src/schema/parser.rs`: version must equal `1`; names match `[A-Za-z_][A-Za-z0-9_]*`; `min`/`max` only integer/float; `min_length`/`max_length` only string and non-negative whole numbers; `pattern` only string; every `allowed` item is type-compatible with no implicit scalar coercion; contradictory bounds invalidate the whole schema; schema-definition failures must retain affected path, safe reason, and any available parser location without target-value data
-- [ ] T042 [US3] Compile schema regex constraints during semantic schema validation and return a schema-definition failure for invalid patterns in `src/schema/parser.rs` while keeping runtime matching in `src/validation/rules/pattern.rs`
-- [ ] T043 [US3] Map malformed or semantically invalid schema failures to the structured preventing-error representation, preserving schema path, safe reason, and available line/column, render them to stderr with stable exit code `4`, and ensure target validation does not proceed or expose target values in `src/main.rs`
+- [X] T040 [US3] Apply strict Serde deserialization (`deny_unknown_fields`) to top-level schema and variable-rule structures in `src/schema/model.rs`
+- [X] T041 [US3] Implement complete schema semantic validation in `src/schema/parser.rs`: version must equal `1`; names match `[A-Za-z_][A-Za-z0-9_]*`; `min`/`max` only integer/float; `min_length`/`max_length` only string and non-negative whole numbers; `pattern` only string; every `allowed` item is type-compatible with no implicit scalar coercion; contradictory bounds invalidate the whole schema; schema-definition failures must retain affected path, safe reason, and any available parser location without target-value data
+- [X] T042 [US3] Compile schema regex constraints during semantic schema validation and return a schema-definition failure for invalid patterns in `src/schema/parser.rs` while keeping runtime matching in `src/validation/rules/pattern.rs`
+- [X] T043 [US3] Map malformed or semantically invalid schema failures to the structured preventing-error representation, preserving schema path, safe reason, and available line/column, render them to stderr with stable exit code `4`, and ensure target validation does not proceed or expose target values in `src/main.rs`
 
 **Checkpoint**: Invalid validation definitions fail explicitly and cannot silently weaken validation.
 

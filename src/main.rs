@@ -167,10 +167,14 @@ fn dotenv_failure(error: env::parser::DotenvParseError) -> PreventingFailure {
 }
 
 fn schema_failure(error: schema::parser::SchemaParseError) -> PreventingFailure {
+    let reason = match error.kind {
+        schema::parser::SchemaErrorKind::Syntax => SafeFailureReason::InvalidSchemaSyntax,
+        schema::parser::SchemaErrorKind::Definition => SafeFailureReason::InvalidSchemaDefinition,
+    };
     PreventingFailure {
         category: FailureCategory::Schema,
         path: error.path,
-        reason: SafeFailureReason::InvalidSchemaDefinition,
+        reason,
         line: error.line,
         column: error.column,
     }

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SchemaDefinition {
     pub(crate) version: u32,
     pub(crate) variables: BTreeMap<String, VariableRule>,
@@ -21,6 +22,7 @@ pub(crate) enum VariableType {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct VariableRule {
     #[serde(rename = "type")]
     pub(crate) r#type: VariableType,
