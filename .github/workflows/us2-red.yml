@@ -956,6 +956,7 @@ jobs:
       - name: Observe required RED validation
         shell: bash
         run: |
+          set +e
           set -u
           cargo test --lib > /tmp/cargo-test-lib.log 2>&1
           lib_status=$?
