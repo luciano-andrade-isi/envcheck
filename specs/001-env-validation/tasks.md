@@ -64,8 +64,8 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Tests for User Story 1
 
-- [ ] T013 [P] [US1] Add unit tests for example comparison covering missing keys, reordered keys, ignored example values, duplicate keys in target/example, empty example file, case-sensitive key matching, and target-only warnings in `src/validation/rules/presence.rs`
-- [ ] T014 [US1] Add compiled-CLI integration tests for explicit `--example` success, missing `REDIS_URL` exit `1`, duplicate declaration exit `1`, warning-only exit `0`, malformed target dotenv exit `3`, and malformed example dotenv exit `3`; for preventing parse failures assert stderr includes the affected path, a safe reason, and the known line when available, and assert actual target values appear in neither stdout nor stderr in `tests/cli.rs`
+- [X] T013 [P] [US1] Add unit tests for example comparison covering missing keys, reordered keys, ignored example values, duplicate keys in target/example, empty example file, case-sensitive key matching, and target-only warnings in `src/validation/rules/presence.rs`
+- [X] T014 [US1] Add compiled-CLI integration tests for explicit `--example` success, missing `REDIS_URL` exit `1`, duplicate declaration exit `1`, warning-only exit `0`, malformed target dotenv exit `3`, and malformed example dotenv exit `3`; for preventing parse failures assert stderr includes the affected path, a safe reason, and the known line when available, and assert actual target values appear in neither stdout nor stderr in `tests/cli.rs`
 
 ### Implementation for User Story 1
 
