@@ -23,8 +23,8 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 **Purpose**: Initialize the Rust binary project and requested source layout without implementing feature behavior yet.
 
-- [ ] T001 Initialize the `envcheck` Cargo binary package with Rust edition 2024 and declare runtime/dev dependencies (`clap` with `derive`, `serde` with `derive`, `toml`, `regex`, `dotenvx-primitives`, `assert_cmd`, `tempfile`) in `Cargo.toml`
-- [ ] T002 Create the planned module/file skeleton in `src/main.rs`, `src/cli.rs`, `src/env/mod.rs`, `src/env/parser.rs`, `src/schema/mod.rs`, `src/schema/model.rs`, `src/schema/parser.rs`, `src/validation/mod.rs`, `src/validation/validator.rs`, `src/validation/error.rs`, `src/validation/rules/mod.rs`, `src/validation/rules/presence.rs`, `src/validation/rules/value_type.rs`, `src/validation/rules/numeric.rs`, `src/validation/rules/length.rs`, `src/validation/rules/allowed.rs`, `src/validation/rules/pattern.rs`, `src/output/mod.rs`, and `tests/cli.rs`
+- [X] T001 Initialize the `envcheck` Cargo binary package with Rust edition 2024 and declare runtime/dev dependencies (`clap` with `derive`, `serde` with `derive`, `toml`, `regex`, `dotenvx-primitives`, `assert_cmd`, `tempfile`) in `Cargo.toml`
+- [X] T002 Create the planned module/file skeleton in `src/main.rs`, `src/cli.rs`, `src/env/mod.rs`, `src/env/parser.rs`, `src/schema/mod.rs`, `src/schema/model.rs`, `src/schema/parser.rs`, `src/validation/mod.rs`, `src/validation/validator.rs`, `src/validation/error.rs`, `src/validation/rules/mod.rs`, `src/validation/rules/presence.rs`, `src/validation/rules/value_type.rs`, `src/validation/rules/numeric.rs`, `src/validation/rules/length.rs`, `src/validation/rules/allowed.rs`, `src/validation/rules/pattern.rs`, `src/output/mod.rs`, and `tests/cli.rs`
 
 **Checkpoint**: Cargo project and source layout exist; no user-story validation behavior is required yet.
 

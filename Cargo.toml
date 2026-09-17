@@ -1,0 +1,15 @@
+[package]
+name = "envcheck"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+dotenvx-primitives = "3.0.2"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+tempfile = "3.27.0"
