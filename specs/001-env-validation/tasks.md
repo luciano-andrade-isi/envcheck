@@ -38,9 +38,9 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 
 ### Tests for shared foundations
 
-- [ ] T003 [P] Add dotenv parser characterization tests covering blank/comment lines, single/double quotes, `export`, CRLF, empty values, literal `${NAME}`, duplicate preservation, invalid non-comment lines, `[A-Za-z_][A-Za-z0-9_]*` names, case sensitivity, inline `#` semantics, and preservation of the known source line for Envcheck-detected malformed dotenv input without exposing parsed values in `src/env/parser.rs`
-- [ ] T004 [P] Add unit tests for canonical diagnostic ordering (`Error` before `Warning`, then variable name, rule code, line) and warning-only `has_errors() == false` semantics in `src/validation/mod.rs`
-- [ ] T005 [P] Add CLI-argument unit tests for required `<ENV_FILE>` and mutual exclusion of `--example`/`--schema` in `src/cli.rs`
+- [X] T003 [P] Add dotenv parser characterization tests covering blank/comment lines, single/double quotes, `export`, CRLF, empty values, literal `${NAME}`, duplicate preservation, invalid non-comment lines, `[A-Za-z_][A-Za-z0-9_]*` names, case sensitivity, inline `#` semantics, and preservation of the known source line for Envcheck-detected malformed dotenv input without exposing parsed values in `src/env/parser.rs`
+- [X] T004 [P] Add unit tests for canonical diagnostic ordering (`Error` before `Warning`, then variable name, rule code, line) and warning-only `has_errors() == false` semantics in `src/validation/mod.rs`
+- [X] T005 [P] Add CLI-argument unit tests for required `<ENV_FILE>` and mutual exclusion of `--example`/`--schema` in `src/cli.rs`
 
 ### Shared implementation
 
