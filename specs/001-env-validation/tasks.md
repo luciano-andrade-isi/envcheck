@@ -104,8 +104,8 @@ description: "Dependency-ordered implementation tasks for Envcheck environment v
 - [X] T031 [P] [US2] Implement string `min_length`/`max_length` validation using Unicode scalar values (`chars().count()`) in `src/validation/rules/length.rs`
 - [X] T032 [P] [US2] Implement typed finite-set `allowed` comparison for string/integer/float/boolean values in `src/validation/rules/allowed.rs`: integer values and integer-rule entries remain `i64` with no `f64` coercion; float values use finite `f64` semantics and may compare against compatible finite TOML integer or float entries; string equality remains case-sensitive and incompatible scalar kinds are never implicitly coerced
 - [X] T033 [P] [US2] Implement string `pattern` evaluation with `regex::Regex::is_match` and no implicit anchors in `src/validation/rules/pattern.rs`
-- [ ] T034 [US2] Implement schema-based target validation orchestration in `src/validation/validator.rs`: duplicate target keys, presence/empty handling, scalar conversion, applicable constraints, target-only warnings, structured safe diagnostics, and deterministic sorting
-- [ ] T035 [US2] Wire explicit `--schema` reading/parsing/validation into `src/main.rs`, using stdout for completed validation and exit `0`/`1` while reserving schema-definition failures for exit `4`
+- [X] T034 [US2] Implement schema-based target validation orchestration in `src/validation/validator.rs`: duplicate target keys, presence/empty handling, scalar conversion, applicable constraints, target-only warnings, structured safe diagnostics, and deterministic sorting
+- [X] T035 [US2] Wire explicit `--schema` reading/parsing/validation into `src/main.rs`, using stdout for completed validation and exit `0`/`1` while reserving schema-definition failures for exit `4`
 
 **Checkpoint**: Both P1 capabilities—explicit `.env.example` comparison and valid-schema typed validation—work independently. This is not a release boundary: US3 MUST complete before any public MVP or release so invalid schemas cannot be silently accepted.
 
