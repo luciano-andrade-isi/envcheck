@@ -94,16 +94,22 @@ Deserialize version-1 TOML into strict Serde structures with `#[serde(deny_unkno
 
 Semantic validation checks version support, variable-name syntax, type/constraint compatibility, valid constraint value types, inclusive bound consistency, finite numeric bounds, `min <= max`, `min_length <= max_length`, typed `allowed` entries, and regex compilation. Invalid schema definitions stop target validation and exit with code `4`.
 
+Integer target values use Rust `i64` as the canonical runtime representation and MUST parse directly as signed 64-bit integers within `i64::MIN..=i64::MAX`. Integer syntax MUST reject decimal, floating-point, or scientific forms that are not valid integer syntax; overflow or underflow is a type/value validation failure. Integer parsing, comparison, `min`/`max`, and `allowed` handling MUST preserve `i64` semantics and MUST NOT coerce through `f64`.
+
+Float target values use Rust `f64` as the canonical runtime representation. Decimal and scientific notation are accepted only when parsing yields a finite `f64`; `NaN`, positive infinity, negative infinity, and overflow that produces a non-finite result are invalid. Float `min`/`max` and `allowed` comparisons preserve finite-`f64` semantics. Finite TOML integer constraint values may participate in float constraints according to the specification's compatibility rules and are compared by their numeric meaning; non-finite float constraint values remain schema errors.
+
 ### Validation and diagnostics
 
 The validation layer operates only on parsed domain structures. It does not know about clap, stdout/stderr, ANSI formatting, or process exit. It produces a `ValidationResult` containing structured `Diagnostic` values with severity, stable rule code, optional variable name, and a safe expectation/message. Target values are never copied into diagnostics.
+
+Failures that prevent validation from completing use a separate structured file/input/schema diagnostic representation carrying a failure category, affected `PathBuf`, safe failure reason, optional line, and optional column. This representation covers unreadable target/example/schema files, dotenv syntax/parsing failures, TOML syntax failures, and semantic schema-definition failures. It MUST NOT contain or expose actual values read from the target `.env`. Parser-provided location information is preserved when available; when Envcheck itself rejects an invalid dotenv line, the known source line number is retained. These preventing failures remain outside successful `ValidationResult` values.
 
 Canonical ordering is deterministic: errors before warnings, then variable name, then stable rule code, with file-level diagnostics ordered before variable-level diagnostics when a validation run can continue. Hash-map iteration order must never determine user-visible output.
 
 ### Output channels
 
 - Completed validation reports, including validation errors and warnings, are rendered to stdout.
-- CLI usage errors and failures that prevent validation from running (file/discovery/dotenv parsing/schema-definition errors) are rendered to stderr.
+- CLI usage errors and failures that prevent validation from running (file/discovery/dotenv parsing/schema-definition errors) are rendered to stderr. File/input/schema failure rendering includes the affected path, safe reason, and available line/column without rendering target `.env` values.
 - Secret values are never rendered by default.
 
 ## Project Structure
@@ -178,7 +184,7 @@ Research is consolidated in [research.md](./research.md). It resolves dependency
 - The CLI contract is now explicit and versionable, including numeric exit codes.
 - Parsing, schema, validation, and output boundaries remain independent in the data model and source layout.
 - Unit/integration test responsibilities are explicit in the design and quickstart.
-- Diagnostics are structurally incapable of requiring raw values; output examples contain synthetic values only.
+- Domain and file-level diagnostics are structurally incapable of requiring raw target values; output examples contain synthetic values only.
 - Dependencies remain bounded to requested capabilities plus test-only tooling; the dotenv dependency tradeoff is recorded in research.
 - Cross-platform paths/newlines are covered by regression tests, and the release CI matrix executes the suite on Linux, macOS, and Windows.
 - No network, persistence, file mutation, unsafe Rust, or ambient environment lookup has been introduced.
