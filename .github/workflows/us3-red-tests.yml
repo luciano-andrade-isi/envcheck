@@ -1,0 +1,457 @@
+name: US3 RED Tests
+
+on:
+  push:
+    branches: [chore/init-spec-kit]
+    paths:
+      - .github/workflows/us3-red-tests.yml
+
+permissions:
+  contents: write
+
+jobs:
+  red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/init-spec-kit
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify prerequisites and baseline
+        run: |
+          set -euo pipefail
+          test ! -e .specify/extensions.yml
+          bash .specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for path in sorted(Path('specs/001-env-validation/checklists').glob('*.md')):
+              text = path.read_text()
+              total = len(re.findall(r'^- \[(?: |X|x)\] ', text, flags=re.M))
+              checked = len(re.findall(r'^- \[(?:X|x)\] ', text, flags=re.M))
+              unchecked = len(re.findall(r'^- \[ \] ', text, flags=re.M))
+              print(f'{path.name}: total={total} checked={checked} unchecked={unchecked}')
+              assert unchecked == 0
+          tasks = Path('specs/001-env-validation/tasks.md').read_text()
+          for task in range(18, 36):
+              assert f'- [X] T{task:03d}' in tasks
+          for task in range(36, 44):
+              assert f'- [ ] T{task:03d}' in tasks
+          PY
+          cargo test
+      - name: Add T036-T039 test contracts
+        run: |
+          cat >> src/schema/parser.rs <<'RS'
+
+          #[cfg(test)]
+          mod us3_tests {
+              use std::path::Path;
+
+              use super::{SchemaParseError, parse_schema};
+
+              fn schema_error(input: &str) -> SchemaParseError {
+                  parse_schema(Path::new("config/.env.schema"), input)
+                      .expect_err("schema must be rejected")
+              }
+
+              #[test]
+              fn us3_malformed_toml_preserves_schema_path_safe_reason_and_location() {
+                  let error = schema_error(
+                      "version = 1\n[variables.VALUE\ntype = \"string\"\n",
+                  );
+
+                  assert_eq!(error.path, Path::new("config/.env.schema"));
+                  assert!(!error.reason.trim().is_empty());
+                  assert!(error.line.is_some(), "TOML parser location should retain line");
+                  assert!(
+                      error.column.is_some(),
+                      "TOML parser location should retain column"
+                  );
+                  assert!(!format!("{error:?}").contains("synthetic-target-secret"));
+              }
+
+              #[test]
+              fn us3_unknown_top_level_property_is_rejected() {
+                  schema_error(
+                      r#"
+          version = 1
+          unexpected = true
+          [variables.VALUE]
+          type = "string"
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_unknown_variable_rule_property_is_rejected() {
+                  schema_error(
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "string"
+          unexpected = true
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_missing_required_schema_structure_is_rejected() {
+                  schema_error("version = 1\n");
+                  schema_error(
+                      r#"
+          [variables.VALUE]
+          type = "string"
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_unsupported_variable_type_is_rejected() {
+                  schema_error(
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "array"
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_unsupported_schema_version_is_rejected() {
+                  schema_error(
+                      r#"
+          version = 2
+          [variables.VALUE]
+          type = "string"
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_incompatible_constraint_for_declared_type_is_rejected() {
+                  schema_error(
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "integer"
+          min_length = 1
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_wrong_constraint_scalar_kind_is_rejected() {
+                  schema_error(
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "integer"
+          min = 1.5
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_contradictory_numeric_bounds_are_rejected() {
+                  schema_error(
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "integer"
+          min = 20
+          max = 10
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_contradictory_string_length_bounds_are_rejected() {
+                  schema_error(
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "string"
+          min_length = 5
+          max_length = 4
+          "#,
+                  );
+              }
+
+              #[test]
+              fn us3_incompatible_typed_allowed_entries_are_rejected_without_coercion() {
+                  for schema in [
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "string"
+          allowed = [1]
+          "#,
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "integer"
+          allowed = [1.0]
+          "#,
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "float"
+          allowed = ["1.0"]
+          "#,
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "boolean"
+          allowed = [1]
+          "#,
+                  ] {
+                      schema_error(schema);
+                  }
+              }
+
+              #[test]
+              fn us3_invalid_variable_identifier_is_a_schema_error() {
+                  let error = schema_error(
+                      r#"
+          version = 1
+          [variables."BAD-NAME"]
+          type = "string"
+          "#,
+                  );
+                  assert!(error.reason.contains("invalid variable name"));
+              }
+
+              #[test]
+              fn us3_non_finite_float_constraints_are_rejected() {
+                  for bound in ["inf", "-inf", "nan"] {
+                      let schema = format!(
+                          "version = 1\n[variables.VALUE]\ntype = \"float\"\nmin = {bound}\n"
+                      );
+                      schema_error(&schema);
+                  }
+              }
+          }
+          RS
+
+          cat >> src/validation/rules/pattern.rs <<'RS'
+
+          #[cfg(test)]
+          mod us3_tests {
+              use std::path::Path;
+
+              use crate::schema::parser::parse_schema;
+
+              #[test]
+              fn us3_invalid_regex_is_rejected_as_schema_definition_error() {
+                  let error = parse_schema(
+                      Path::new("config/.env.schema"),
+                      r#"
+          version = 1
+          [variables.VALUE]
+          type = "string"
+          pattern = "["
+          "#,
+                  )
+                  .expect_err("invalid regex must invalidate the schema before target validation");
+
+                  assert_eq!(error.path, Path::new("config/.env.schema"));
+                  let reason = error.reason.to_ascii_lowercase();
+                  assert!(reason.contains("regex") || reason.contains("pattern"));
+              }
+          }
+          RS
+
+          cat >> tests/cli.rs <<'RS'
+
+          fn assert_rendered_schema_location(rendered: &str, path: &Path) {
+              let path_text = path.display().to_string();
+              let (_, suffix) = rendered
+                  .split_once(&path_text)
+                  .expect("stderr must contain the schema path");
+              let suffix = suffix
+                  .strip_prefix(':')
+                  .expect("schema path must be followed by parser location");
+              let mut parts = suffix.split(':');
+              let line = parts
+                  .next()
+                  .expect("line component")
+                  .parse::<usize>()
+                  .expect("line must be numeric");
+              let column = parts
+                  .next()
+                  .expect("column component")
+                  .parse::<usize>()
+                  .expect("column must be numeric");
+              assert!(line > 0);
+              assert!(column > 0);
+          }
+
+          fn assert_invalid_schema_prevents_validation(schema: &str, expect_location: bool) {
+              let fixture = SchemaFixture::new("VALUE=synthetic-target-secret\n", schema);
+              let output = run_schema(&fixture.target, &fixture.schema);
+
+              assert_eq!(output.status.code(), Some(4));
+              assert!(stdout(&output).is_empty());
+              let rendered = stderr(&output);
+              assert!(rendered.contains(&fixture.schema.display().to_string()));
+              assert!(rendered.contains("schema"));
+              assert!(rendered.contains("invalid schema"));
+              if expect_location {
+                  assert_rendered_schema_location(&rendered, &fixture.schema);
+              }
+              assert_target_values_redacted(&output, &["synthetic-target-secret"]);
+          }
+
+          #[test]
+          fn invalid_schema_malformed_toml_exits_four_with_location_and_redaction() {
+              assert_invalid_schema_prevents_validation(
+                  "version = 1\n[variables.VALUE\ntype = \"string\"\n",
+                  true,
+              );
+          }
+
+          #[test]
+          fn invalid_schema_unknown_top_level_property_exits_four() {
+              assert_invalid_schema_prevents_validation(
+                  r#"
+          version = 1
+          unexpected = true
+          [variables.VALUE]
+          type = "string"
+          "#,
+                  false,
+              );
+          }
+
+          #[test]
+          fn invalid_schema_unknown_variable_rule_property_exits_four() {
+              assert_invalid_schema_prevents_validation(
+                  r#"
+          version = 1
+          [variables.VALUE]
+          type = "string"
+          unexpected = true
+          "#,
+                  false,
+              );
+          }
+
+          #[test]
+          fn invalid_schema_unsupported_version_exits_four() {
+              assert_invalid_schema_prevents_validation(
+                  r#"
+          version = 2
+          [variables.VALUE]
+          type = "string"
+          "#,
+                  false,
+              );
+          }
+
+          #[test]
+          fn invalid_schema_incompatible_constraint_exits_four() {
+              assert_invalid_schema_prevents_validation(
+                  r#"
+          version = 1
+          [variables.VALUE]
+          type = "integer"
+          min_length = 1
+          "#,
+                  false,
+              );
+          }
+
+          #[test]
+          fn invalid_schema_contradictory_bounds_exit_four() {
+              assert_invalid_schema_prevents_validation(
+                  r#"
+          version = 1
+          [variables.VALUE]
+          type = "integer"
+          min = 20
+          max = 10
+          "#,
+                  false,
+              );
+          }
+
+          #[test]
+          fn invalid_schema_incompatible_allowed_entry_exits_four_without_coercion() {
+              assert_invalid_schema_prevents_validation(
+                  r#"
+          version = 1
+          [variables.VALUE]
+          type = "integer"
+          allowed = ["synthetic-target-secret"]
+          "#,
+                  false,
+              );
+          }
+
+          #[test]
+          fn invalid_schema_regex_exits_four_instead_of_becoming_target_validation() {
+              assert_invalid_schema_prevents_validation(
+                  r#"
+          version = 1
+          [variables.VALUE]
+          type = "string"
+          pattern = "["
+          "#,
+                  false,
+              );
+          }
+          RS
+
+          cargo fmt
+          cargo fmt --check
+          cargo clippy --all-targets --all-features -- -D warnings
+      - name: Observe required RED state
+        run: |
+          set -euo pipefail
+          set +e
+          cargo test --lib > /tmp/lib-red.log 2>&1
+          lib_status=$?
+          cargo test --bin envcheck > /tmp/unit-red.log 2>&1
+          unit_status=$?
+          cargo test --test cli > /tmp/cli-red.log 2>&1
+          cli_status=$?
+          set -e
+
+          cat /tmp/lib-red.log
+          cat /tmp/unit-red.log
+          cat /tmp/cli-red.log
+
+          test "$lib_status" -ne 0
+          test "$unit_status" -ne 0
+          test "$cli_status" -ne 0
+          grep -q "no library targets found" /tmp/lib-red.log
+          grep -q "us3_.*FAILED" /tmp/unit-red.log
+          grep -q "invalid_schema_.*FAILED" /tmp/cli-red.log
+      - name: Verify completed US1 and valid US2 flows remain green
+        run: |
+          set -euo pipefail
+          cargo test --bin envcheck -- --skip us3_tests
+          cargo test --test cli -- --skip invalid_schema_
+      - name: Mark only T036-T039 complete and commit tests
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('specs/001-env-validation/tasks.md')
+          text = path.read_text()
+          for task in range(36, 40):
+              old = f'- [ ] T{task:03d}'
+              new = f'- [X] T{task:03d}'
+              assert old in text, f'{old} not found'
+              text = text.replace(old, new, 1)
+          for task in range(40, 44):
+              assert f'- [ ] T{task:03d}' in text
+          path.write_text(text)
+          PY
+          rm .github/workflows/us3-red-tests.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/schema/parser.rs src/validation/rules/pattern.rs tests/cli.rs specs/001-env-validation/tasks.md .github/workflows/us3-red-tests.yml
+          git commit -m "test: define invalid env schema behavior"
+          git push origin HEAD:chore/init-spec-kit
