@@ -15,6 +15,7 @@
 - Q: How should Envcheck handle a non-empty, non-comment line that cannot be parsed as a valid dotenv declaration? → A: Treat it as a parsing error and fail validation.
 - Q: Should variable names be compared case-sensitively across `.env`, `.env.example`, and `.env.schema`? → A: Yes. Variable names are case-sensitive on all supported platforms.
 - Q: Which representations should be accepted for `float` values? → A: Accept finite decimal and scientific-notation values; reject `NaN` and positive or negative infinity.
+- Q: Which variable names should be considered valid in `.env` and `.env.example`? → A: Names must match `[A-Za-z_][A-Za-z0-9_]*`; the same identifier rule applies to variable names declared by `.env.schema`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -49,6 +50,9 @@ missing keys and duplicate declarations are errors while target-only keys are wa
    fails rather than ignoring the line.
 7. **Given** one file declares `PORT` and another declares `port`, **When** validation compares
    variable names, **Then** they are treated as distinct variables on every supported platform.
+8. **Given** a variable name starts with a digit or contains characters other than letters, digits,
+   and `_`, **When** the file or schema is parsed, **Then** the identifier is rejected as invalid; a
+   valid name starts with a letter or `_` and continues only with letters, digits, or `_`.
 
 ---
 
@@ -159,6 +163,8 @@ the selected definition, diagnostic severity, and process success/failure semant
 - A quoted value contains spaces, `#`, or `=` characters that are part of the value.
 - A variable name occurs multiple times with different values; duplication remains an error.
 - Variable names that differ only by letter case, such as `PORT` and `port`, are distinct.
+- Variable names must match `[A-Za-z_][A-Za-z0-9_]*`; names such as `1PORT`, `APP-NAME`,
+  and `APP.NAME` are invalid.
 - Integer and float values occur exactly at minimum or maximum boundaries.
 - Integer input contains decimal notation and must not be accepted as an integer.
 - Float input may use finite decimal or scientific notation; `NaN` and positive or negative infinity
@@ -202,8 +208,9 @@ the selected definition, diagnostic severity, and process success/failure semant
   line that cannot be parsed as a valid dotenv declaration MUST produce a parsing error and cause
   validation to fail rather than being ignored.
 - **FR-011**: The parser MUST distinguish a missing variable from a declared variable with an empty
-  value. Variable names MUST be treated as case-sensitive identifiers for parsing, duplicate
-  detection, example-file matching, and schema matching on Linux, macOS, and Windows.
+  value. Variable names MUST match `[A-Za-z_][A-Za-z0-9_]*` and MUST be treated as case-sensitive
+  identifiers for parsing, duplicate detection, example-file matching, and schema matching on Linux,
+  macOS, and Windows. Variable names declared by `.env.schema` MUST follow the same identifier rule.
 - **FR-012**: Duplicate variable declarations in the target `.env` MUST produce a validation error.
 - **FR-013**: Duplicate variable declarations in `.env.example` MUST produce a validation error.
 - **FR-014**: Duplicate declarations MUST NOT use first-value-wins or last-value-wins semantics for
@@ -363,6 +370,8 @@ the selected definition, diagnostic severity, and process success/failure semant
 - Dotenv parsing follows common semantics for comments, blank lines, quoted values, and `export`
   prefixes, while interpolation is deliberately disabled. Non-empty, non-comment lines that are not
   valid dotenv declarations are errors rather than ignored input.
+- Environment variable identifiers use the portable form `[A-Za-z_][A-Za-z0-9_]*` across target,
+  example, and schema definitions.
 - Exact numeric exit codes and exact command flag names are deferred to technical planning, provided
   the success/non-success semantics defined here are preserved.
 - Strict handling of additional variables is intentionally excluded from the MVP; additional
