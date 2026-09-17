@@ -1,0 +1,736 @@
+name: US2 Schema Rules
+
+on:
+  push:
+    branches:
+      - chore/init-spec-kit
+    paths:
+      - .github/workflows/us2-rules.yml
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: chore/init-spec-kit
+          fetch-depth: 0
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify prerequisites and checklist gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+          test ! -e .specify/extensions.yml
+          for n in $(seq -w 18 25); do
+            grep -Eq -- "^- \[[Xx]\] T0${n}\\b" specs/001-env-validation/tasks.md
+          done
+          for n in $(seq -w 26 35); do
+            grep -F -- "- [ ] T0${n} " specs/001-env-validation/tasks.md
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for path in sorted(Path('specs/001-env-validation/checklists').glob('*.md')):
+              text = path.read_text()
+              total = len(re.findall(r'^- \[(?: |X|x)\] ', text, flags=re.M))
+              checked = len(re.findall(r'^- \[(?:X|x)\] ', text, flags=re.M))
+              unchecked = len(re.findall(r'^- \[ \] ', text, flags=re.M))
+              print(f'{path.name}: total={total} checked={checked} unchecked={unchecked}')
+              if unchecked:
+                  raise SystemExit(f'Checklist gate failed: {path} has {unchecked} unchecked items')
+          PY
+          git rev-parse --git-dir >/dev/null
+          grep -Eq '^(target|target/|/target/?)$' .gitignore
+
+      - name: Implement T026 schema model
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > src/schema/model.rs <<'RS'
+          // T034/T035 intentionally wire these schema types later; this phase defines the model first.
+          #![allow(dead_code)]
+
+          use std::collections::BTreeMap;
+
+          use serde::Deserialize;
+
+          #[derive(Clone, Debug, PartialEq, Deserialize)]
+          pub(crate) struct SchemaDefinition {
+              pub(crate) version: u32,
+              pub(crate) variables: BTreeMap<String, VariableRule>,
+          }
+
+          #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
+          #[serde(rename_all = "lowercase")]
+          pub(crate) enum VariableType {
+              String,
+              Integer,
+              Float,
+              Boolean,
+          }
+
+          #[derive(Clone, Debug, PartialEq, Deserialize)]
+          pub(crate) struct VariableRule {
+              #[serde(rename = "type")]
+              pub(crate) r#type: VariableType,
+              #[serde(default)]
+              pub(crate) required: bool,
+              #[serde(default)]
+              pub(crate) allow_empty: bool,
+              pub(crate) min: Option<SchemaScalar>,
+              pub(crate) max: Option<SchemaScalar>,
+              pub(crate) min_length: Option<u64>,
+              pub(crate) max_length: Option<u64>,
+              pub(crate) allowed: Option<Vec<SchemaScalar>>,
+              pub(crate) pattern: Option<String>,
+          }
+
+          #[derive(Clone, Debug, PartialEq, Deserialize)]
+          #[serde(untagged)]
+          pub(crate) enum SchemaScalar {
+              String(String),
+              Integer(i64),
+              Float(f64),
+              Boolean(bool),
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::{SchemaDefinition, SchemaScalar, VariableRule, VariableType};
+
+              fn parse_schema(input: &str) -> SchemaDefinition {
+                  toml::from_str(input).expect("schema should deserialize")
+              }
+
+              #[test]
+              fn deserializes_schema_definition_variable_rules_types_and_scalar_kinds() {
+                  let schema = parse_schema(
+                      r#"
+          version = 1
+
+          [variables.APP_NAME]
+          type = "string"
+          required = true
+          allow_empty = true
+          min_length = 2
+          max_length = 20
+          allowed = ["dev", "prod"]
+          pattern = "^[a-z]+$"
+
+          [variables.APP_PORT]
+          type = "integer"
+          min = -10
+          max = 10
+          allowed = [-10, 0, 10]
+
+          [variables.RATIO]
+          type = "float"
+          min = 1
+          max = 2.5
+          allowed = [1, 1.5, 2]
+
+          [variables.DEBUG]
+          type = "boolean"
+          allowed = [true, false]
+          "#,
+                  );
+
+                  assert_eq!(schema.version, 1);
+                  assert_eq!(schema.variables.len(), 4);
+
+                  let string_rule: &VariableRule = &schema.variables["APP_NAME"];
+                  assert_eq!(string_rule.r#type, VariableType::String);
+                  assert!(string_rule.required);
+                  assert!(string_rule.allow_empty);
+                  assert_eq!(string_rule.min_length, Some(2));
+                  assert_eq!(string_rule.max_length, Some(20));
+                  assert_eq!(string_rule.pattern.as_deref(), Some("^[a-z]+$"));
+                  assert_eq!(
+                      string_rule.allowed.as_deref(),
+                      Some(
+                          [
+                              SchemaScalar::String("dev".to_owned()),
+                              SchemaScalar::String("prod".to_owned()),
+                          ]
+                          .as_slice()
+                      )
+                  );
+
+                  let integer_rule = &schema.variables["APP_PORT"];
+                  assert_eq!(integer_rule.r#type, VariableType::Integer);
+                  assert_eq!(integer_rule.min, Some(SchemaScalar::Integer(-10)));
+                  assert_eq!(integer_rule.max, Some(SchemaScalar::Integer(10)));
+                  assert_eq!(
+                      integer_rule.allowed.as_deref(),
+                      Some(
+                          [
+                              SchemaScalar::Integer(-10),
+                              SchemaScalar::Integer(0),
+                              SchemaScalar::Integer(10),
+                          ]
+                          .as_slice()
+                      )
+                  );
+
+                  let float_rule = &schema.variables["RATIO"];
+                  assert_eq!(float_rule.r#type, VariableType::Float);
+                  assert_eq!(float_rule.min, Some(SchemaScalar::Integer(1)));
+                  assert_eq!(float_rule.max, Some(SchemaScalar::Float(2.5)));
+                  assert_eq!(
+                      float_rule.allowed.as_deref(),
+                      Some(
+                          [
+                              SchemaScalar::Integer(1),
+                              SchemaScalar::Float(1.5),
+                              SchemaScalar::Integer(2),
+                          ]
+                          .as_slice()
+                      )
+                  );
+
+                  let boolean_rule = &schema.variables["DEBUG"];
+                  assert_eq!(boolean_rule.r#type, VariableType::Boolean);
+                  assert_eq!(
+                      boolean_rule.allowed.as_deref(),
+                      Some([SchemaScalar::Boolean(true), SchemaScalar::Boolean(false)].as_slice())
+                  );
+              }
+
+              #[test]
+              fn required_and_allow_empty_default_to_false() {
+                  let schema = parse_schema(
+                      r#"
+          version = 1
+
+          [variables.OPTIONAL]
+          type = "string"
+          "#,
+                  );
+
+                  let rule = &schema.variables["OPTIONAL"];
+                  assert!(!rule.required);
+                  assert!(!rule.allow_empty);
+                  assert_eq!(rule.min, None);
+                  assert_eq!(rule.max, None);
+                  assert_eq!(rule.min_length, None);
+                  assert_eq!(rule.max_length, None);
+                  assert_eq!(rule.allowed, None);
+                  assert_eq!(rule.pattern, None);
+              }
+          }
+          RS
+
+      - name: Implement T027 valid-schema parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > src/schema/parser.rs <<'RS'
+          // T034/T035 will consume this parser; US3 adds strict semantic schema rejection later.
+          #![allow(dead_code)]
+
+          use std::path::{Path, PathBuf};
+
+          use super::model::SchemaDefinition;
+
+          #[derive(Clone, Debug, Eq, PartialEq)]
+          pub(crate) struct SchemaParseError {
+              pub(crate) path: PathBuf,
+              pub(crate) reason: String,
+              pub(crate) line: Option<usize>,
+              pub(crate) column: Option<usize>,
+          }
+
+          pub(crate) fn parse_schema(
+              path: &Path,
+              input: &str,
+          ) -> Result<SchemaDefinition, SchemaParseError> {
+              let schema = toml::from_str::<SchemaDefinition>(input)
+                  .map_err(|error| toml_error(path, input, &error))?;
+
+              for variable in schema.variables.keys() {
+                  if !is_valid_variable_name(variable) {
+                      return Err(SchemaParseError {
+                          path: path.to_path_buf(),
+                          reason: format!("invalid variable name `{variable}`"),
+                          line: None,
+                          column: None,
+                      });
+                  }
+              }
+
+              Ok(schema)
+          }
+
+          fn toml_error(path: &Path, input: &str, error: &toml::de::Error) -> SchemaParseError {
+              let location = error
+                  .span()
+                  .map(|span| line_and_column(input, span.start));
+
+              SchemaParseError {
+                  path: path.to_path_buf(),
+                  reason: error.message().to_owned(),
+                  line: location.map(|(line, _)| line),
+                  column: location.map(|(_, column)| column),
+              }
+          }
+
+          fn line_and_column(input: &str, byte_offset: usize) -> (usize, usize) {
+              let mut line = 1;
+              let mut column = 1;
+
+              for (offset, character) in input.char_indices() {
+                  if offset >= byte_offset {
+                      break;
+                  }
+                  if character == '\n' {
+                      line += 1;
+                      column = 1;
+                  } else {
+                      column += 1;
+                  }
+              }
+
+              (line, column)
+          }
+
+          fn is_valid_variable_name(name: &str) -> bool {
+              let mut bytes = name.bytes();
+              let Some(first) = bytes.next() else {
+                  return false;
+              };
+
+              (first == b'_' || first.is_ascii_alphabetic())
+                  && bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use std::path::Path;
+
+              use super::parse_schema;
+
+              #[test]
+              fn parses_compatible_version_one_schema() {
+                  let schema = parse_schema(
+                      Path::new(".env.schema"),
+                      r#"
+          version = 1
+          [variables.APP_PORT]
+          type = "integer"
+          required = true
+          min = 1
+          max = 65535
+          "#,
+                  )
+                  .expect("compatible version-one schema should parse");
+
+                  assert_eq!(schema.version, 1);
+                  assert!(schema.variables.contains_key("APP_PORT"));
+              }
+
+              #[test]
+              fn rejects_invalid_variable_identifier_at_parser_boundary() {
+                  let error = parse_schema(
+                      Path::new("config/.env.schema"),
+                      r#"
+          version = 1
+          [variables."BAD-NAME"]
+          type = "string"
+          "#,
+                  )
+                  .expect_err("invalid variable name should be rejected");
+
+                  assert_eq!(error.path, Path::new("config/.env.schema"));
+                  assert!(error.reason.contains("invalid variable name"));
+                  assert_eq!(error.line, None);
+                  assert_eq!(error.column, None);
+              }
+          }
+          RS
+
+      - name: Implement T028 schema presence semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/validation/rules/presence.rs')
+          text = path.read_text()
+          marker = '\n#[cfg(test)]\nmod tests {'
+          implementation = r'''
+
+          // T034 will orchestrate this rule; this phase implements and unit-tests it independently.
+          #[allow(dead_code)]
+          pub(crate) fn validate_schema_presence(
+              variable: &str,
+              entry: Option<&crate::env::EnvEntry>,
+              required: bool,
+              allow_empty: bool,
+          ) -> (ValidationResult, bool) {
+              let mut diagnostics = Vec::new();
+
+              let Some(entry) = entry else {
+                  if required {
+                      diagnostics.push(Diagnostic {
+                          severity: Severity::Error,
+                          code: RuleCode::MissingRequired,
+                          variable: Some(variable.to_owned()),
+                          rule: "required variable is missing".to_owned(),
+                          expected: Some("variable to be present".to_owned()),
+                          line: None,
+                      });
+                  }
+                  return (ValidationResult { diagnostics }, true);
+              };
+
+              if entry.value.is_empty() {
+                  if !allow_empty {
+                      diagnostics.push(Diagnostic {
+                          severity: Severity::Error,
+                          code: RuleCode::EmptyNotAllowed,
+                          variable: Some(variable.to_owned()),
+                          rule: "empty value is not allowed".to_owned(),
+                          expected: Some("a non-empty value".to_owned()),
+                          line: Some(entry.line),
+                      });
+                  }
+                  return (ValidationResult { diagnostics }, true);
+              }
+
+              (ValidationResult { diagnostics }, false)
+          }
+          '''
+          if marker not in text:
+              raise SystemExit('presence test marker not found')
+          text = text.replace(marker, implementation + marker, 1)
+          path.write_text(text)
+          PY
+
+      - name: Implement T029 scalar conversion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/validation/rules/value_type.rs')
+          text = path.read_text()
+          marker = '\n#[cfg(test)]\nmod tests {'
+          implementation = r'''
+
+          use crate::schema::model::{SchemaScalar, VariableType};
+          use crate::validation::error::RuleCode;
+
+          // T034 will orchestrate scalar conversion; this phase validates the rule independently.
+          #[allow(dead_code)]
+          pub(crate) fn parse_scalar(
+              value: &str,
+              variable_type: VariableType,
+          ) -> Result<SchemaScalar, RuleCode> {
+              match variable_type {
+                  VariableType::String => Ok(SchemaScalar::String(value.to_owned())),
+                  VariableType::Integer => value
+                      .parse::<i64>()
+                      .map(SchemaScalar::Integer)
+                      .map_err(|_| RuleCode::TypeMismatch),
+                  VariableType::Float => value
+                      .parse::<f64>()
+                      .ok()
+                      .filter(|value| value.is_finite())
+                      .map(SchemaScalar::Float)
+                      .ok_or(RuleCode::TypeMismatch),
+                  VariableType::Boolean if value.eq_ignore_ascii_case("true") => {
+                      Ok(SchemaScalar::Boolean(true))
+                  }
+                  VariableType::Boolean if value.eq_ignore_ascii_case("false") => {
+                      Ok(SchemaScalar::Boolean(false))
+                  }
+                  VariableType::Boolean => Err(RuleCode::TypeMismatch),
+              }
+          }
+          '''
+          if marker not in text:
+              raise SystemExit('value_type test marker not found')
+          text = text.replace(marker, implementation + marker, 1)
+          path.write_text(text)
+          PY
+
+      - name: Implement T030 numeric bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/validation/rules/numeric.rs')
+          text = path.read_text()
+          marker = '\n#[cfg(test)]\nmod tests {'
+          implementation = r'''
+
+          use crate::validation::error::RuleCode;
+
+          // T034 will orchestrate numeric rules; integer comparisons intentionally remain i64.
+          #[allow(dead_code)]
+          pub(crate) fn validate_integer_bounds(
+              value: i64,
+              min: Option<i64>,
+              max: Option<i64>,
+          ) -> Vec<RuleCode> {
+              let mut violations = Vec::new();
+              if min.is_some_and(|minimum| value < minimum) {
+                  violations.push(RuleCode::BelowMin);
+              }
+              if max.is_some_and(|maximum| value > maximum) {
+                  violations.push(RuleCode::AboveMax);
+              }
+              violations
+          }
+
+          // T034 will orchestrate numeric rules; callers provide finite f64 values and bounds.
+          #[allow(dead_code)]
+          pub(crate) fn validate_float_bounds(
+              value: f64,
+              min: Option<f64>,
+              max: Option<f64>,
+          ) -> Vec<RuleCode> {
+              let mut violations = Vec::new();
+              if min.is_some_and(|minimum| value < minimum) {
+                  violations.push(RuleCode::BelowMin);
+              }
+              if max.is_some_and(|maximum| value > maximum) {
+                  violations.push(RuleCode::AboveMax);
+              }
+              violations
+          }
+          '''
+          if marker not in text:
+              raise SystemExit('numeric test marker not found')
+          text = text.replace(marker, implementation + marker, 1)
+          path.write_text(text)
+          PY
+
+      - name: Implement T031 Unicode scalar lengths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/validation/rules/length.rs')
+          text = path.read_text()
+          marker = '\n#[cfg(test)]\nmod tests {'
+          implementation = r'''
+
+          use crate::validation::error::RuleCode;
+
+          // T034 will orchestrate length rules; counting uses Unicode scalar values by contract.
+          #[allow(dead_code)]
+          pub(crate) fn validate_string_length(
+              value: &str,
+              min_length: Option<u64>,
+              max_length: Option<u64>,
+          ) -> Vec<RuleCode> {
+              let length = u64::try_from(value.chars().count())
+                  .expect("supported target usize values fit within u64");
+              let mut violations = Vec::new();
+
+              if min_length.is_some_and(|minimum| length < minimum) {
+                  violations.push(RuleCode::TooShort);
+              }
+              if max_length.is_some_and(|maximum| length > maximum) {
+                  violations.push(RuleCode::TooLong);
+              }
+
+              violations
+          }
+          '''
+          if marker not in text:
+              raise SystemExit('length test marker not found')
+          text = text.replace(marker, implementation + marker, 1)
+          path.write_text(text)
+          PY
+
+      - name: Implement T032 typed allowed semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/validation/rules/allowed.rs')
+          text = path.read_text()
+          marker = '\n#[cfg(test)]\nmod tests {'
+          implementation = r'''
+
+          use crate::schema::model::{SchemaScalar, VariableType};
+
+          // Exact finite-f64 equality is the specified `allowed` contract for float values.
+          #[allow(clippy::float_cmp, dead_code)]
+          pub(crate) fn is_allowed(
+              value: &SchemaScalar,
+              allowed: &[SchemaScalar],
+              variable_type: VariableType,
+          ) -> bool {
+              match (variable_type, value) {
+                  (VariableType::String, SchemaScalar::String(value)) => allowed.iter().any(
+                      |candidate| matches!(candidate, SchemaScalar::String(candidate) if candidate == value),
+                  ),
+                  (VariableType::Integer, SchemaScalar::Integer(value)) => allowed.iter().any(
+                      |candidate| matches!(candidate, SchemaScalar::Integer(candidate) if candidate == value),
+                  ),
+                  (VariableType::Float, SchemaScalar::Float(value)) if value.is_finite() => {
+                      allowed.iter().any(|candidate| match candidate {
+                          SchemaScalar::Integer(candidate) => (*candidate as f64) == *value,
+                          SchemaScalar::Float(candidate) => candidate.is_finite() && *candidate == *value,
+                          SchemaScalar::String(_) | SchemaScalar::Boolean(_) => false,
+                      })
+                  }
+                  (VariableType::Boolean, SchemaScalar::Boolean(value)) => allowed.iter().any(
+                      |candidate| matches!(candidate, SchemaScalar::Boolean(candidate) if candidate == value),
+                  ),
+                  _ => false,
+              }
+          }
+          '''
+          if marker not in text:
+              raise SystemExit('allowed test marker not found')
+          text = text.replace(marker, implementation + marker, 1)
+          path.write_text(text)
+          PY
+
+      - name: Implement T033 regex matching
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/validation/rules/pattern.rs')
+          text = path.read_text()
+          marker = '\n#[cfg(test)]\nmod tests {'
+          implementation = r'''
+
+          use regex::Regex;
+
+          // T034 will orchestrate pattern diagnostics; matching itself adds no implicit anchors.
+          #[allow(dead_code)]
+          pub(crate) fn matches_pattern(value: &str, pattern: &Regex) -> bool {
+              pattern.is_match(value)
+          }
+          '''
+          if marker not in text:
+              raise SystemExit('pattern test marker not found')
+          text = text.replace(marker, implementation + marker, 1)
+          path.write_text(text)
+          PY
+
+      - name: Format and quality checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt
+          cargo fmt --check
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run requested library command and unit-test equivalent
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          cargo test --lib > /tmp/cargo-test-lib.log 2>&1
+          lib_status=$?
+          set -e
+          echo "cargo test --lib status: $lib_status"
+          cat /tmp/cargo-test-lib.log
+          test "$lib_status" -ne 0
+          grep -F 'no library targets found' /tmp/cargo-test-lib.log
+          cargo test --bin envcheck
+
+      - name: Run full suite and confirm only deferred schema CLI remains RED
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          cargo test > /tmp/cargo-test-full.log 2>&1
+          full_status=$?
+          cargo test --test cli > /tmp/cargo-test-cli.log 2>&1
+          cli_status=$?
+          set -e
+          echo "cargo test status: $full_status"
+          cat /tmp/cargo-test-full.log
+          echo "cargo test --test cli status: $cli_status"
+          cat /tmp/cargo-test-cli.log
+          test "$full_status" -ne 0
+          test "$cli_status" -ne 0
+          grep -F 'test result: FAILED. 6 passed; 11 failed' /tmp/cargo-test-cli.log
+          if grep -E '^    [a-zA-Z0-9_]+$' /tmp/cargo-test-cli.log | grep -v '^    schema_' ; then
+            echo 'A non-schema integration test failed unexpectedly' >&2
+            exit 1
+          fi
+          cargo test --test cli -- --skip schema_
+
+      - name: Mark only T026 through T033 complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('specs/001-env-validation/tasks.md')
+          text = path.read_text()
+          for n in range(26, 34):
+              task = f'T{n:03d}'
+              old = f'- [ ] {task} '
+              if text.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one unchecked {task}')
+              text = text.replace(old, f'- [X] {task} ', 1)
+          for n in (34, 35):
+              if f'- [ ] T{n:03d} ' not in text:
+                  raise SystemExit(f'T{n:03d} must remain unchecked')
+          path.write_text(text)
+          PY
+
+      - name: Verify scope and commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .specify/extensions.yml
+          rm .github/workflows/us2-rules.yml
+          cargo fmt --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --bin envcheck
+          cargo test --test cli -- --skip schema_
+
+          python3 - <<'PY'
+          import subprocess
+          allowed = {
+              'src/schema/model.rs',
+              'src/schema/parser.rs',
+              'src/validation/rules/presence.rs',
+              'src/validation/rules/value_type.rs',
+              'src/validation/rules/numeric.rs',
+              'src/validation/rules/length.rs',
+              'src/validation/rules/allowed.rs',
+              'src/validation/rules/pattern.rs',
+              'specs/001-env-validation/tasks.md',
+              '.github/workflows/us2-rules.yml',
+          }
+          paths = []
+          for line in subprocess.check_output(['git', 'status', '--porcelain'], text=True).splitlines():
+              path = line[3:]
+              if ' -> ' in path:
+                  path = path.split(' -> ', 1)[1]
+              paths.append(path)
+          unexpected = sorted(set(paths) - allowed)
+          if unexpected:
+              raise SystemExit(f'Unexpected changed paths: {unexpected}')
+          print('Changed paths:', ', '.join(paths))
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: add env schema model and scalar validation'
+          git push origin HEAD:chore/init-spec-kit
