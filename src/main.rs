@@ -1,28 +1,21 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
 
 mod cli;
-// Foundational parser/domain APIs are wired into story flows by later tasks.
-#[allow(dead_code)]
 mod env;
-// Foundational rendering primitives are wired into story flows by later tasks.
-#[allow(dead_code)]
 mod output;
 mod schema;
-// Foundational validation APIs are wired into story flows by later tasks.
 #[allow(dead_code)]
 mod validation;
 
 pub(crate) const EXIT_SUCCESS: u8 = 0;
-// Stable public exit constants are defined now and consumed by later orchestration tasks.
-#[allow(dead_code)]
 pub(crate) const EXIT_VALIDATION_ERROR: u8 = 1;
 #[allow(dead_code)]
 pub(crate) const EXIT_CLI_USAGE_ERROR: u8 = 2;
-#[allow(dead_code)]
 pub(crate) const EXIT_INPUT_ERROR: u8 = 3;
 #[allow(dead_code)]
 pub(crate) const EXIT_SCHEMA_ERROR: u8 = 4;
@@ -71,7 +64,6 @@ impl fmt::Display for SafeFailureReason {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreventingFailure {
     pub(crate) category: FailureCategory,
@@ -83,6 +75,66 @@ pub(crate) struct PreventingFailure {
 
 fn main() -> ExitCode {
     let cli = cli::Cli::parse();
-    let _ = (&cli.env_file, &cli.example, &cli.schema);
+
+    if let Some(example_path) = cli.example.as_deref() {
+        return run_explicit_example(&cli.env_file, example_path);
+    }
+
+    // Validator discovery and schema execution are intentionally implemented by later tasks.
+    let _ = cli.schema;
     ExitCode::from(EXIT_SUCCESS)
+}
+
+fn run_explicit_example(target_path: &Path, example_path: &Path) -> ExitCode {
+    let target_text = match read_input(target_path) {
+        Ok(text) => text,
+        Err(failure) => return preventing_exit(failure),
+    };
+    let example_text = match read_input(example_path) {
+        Ok(text) => text,
+        Err(failure) => return preventing_exit(failure),
+    };
+
+    let target = match env::parser::parse_dotenv(target_path, &target_text) {
+        Ok(document) => document,
+        Err(error) => return preventing_exit(dotenv_failure(error)),
+    };
+    let example = match env::parser::parse_dotenv(example_path, &example_text) {
+        Ok(document) => document,
+        Err(error) => return preventing_exit(dotenv_failure(error)),
+    };
+
+    let result = validation::validator::validate_example(&target, &example);
+    let exit = if result.has_errors() {
+        EXIT_VALIDATION_ERROR
+    } else {
+        EXIT_SUCCESS
+    };
+    let _ = output::write_validation_stdout(&result);
+    ExitCode::from(exit)
+}
+
+fn read_input(path: &Path) -> Result<String, PreventingFailure> {
+    fs::read_to_string(path).map_err(|_| PreventingFailure {
+        category: FailureCategory::Input,
+        path: path.to_path_buf(),
+        reason: SafeFailureReason::UnreadableFile,
+        line: None,
+        column: None,
+    })
+}
+
+fn dotenv_failure(error: env::parser::DotenvParseError) -> PreventingFailure {
+    PreventingFailure {
+        category: FailureCategory::Dotenv,
+        path: error.path,
+        reason: SafeFailureReason::InvalidDotenvSyntax,
+        line: error.line,
+        column: error.column,
+    }
+}
+
+fn preventing_exit(failure: PreventingFailure) -> ExitCode {
+    let _ = output::write_preventing_stderr(&failure);
+    ExitCode::from(EXIT_INPUT_ERROR)
 }
