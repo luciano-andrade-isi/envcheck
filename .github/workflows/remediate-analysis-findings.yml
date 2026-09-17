@@ -1,0 +1,149 @@
+name: Apply analyze remediation
+
+on:
+  push:
+    branches:
+      - chore/init-spec-kit
+    paths:
+      - .github/workflows/remediate-analysis-findings.yml
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply spec, plan, and task remediation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"Replacement point not found: {label}")
+              return text.replace(old, new, 1)
+
+          # A1: make string-length semantics explicit in the specification.
+          spec_path = Path("specs/001-env-validation/spec.md")
+          spec = spec_path.read_text()
+
+          old = """11. **Given** a value contains `${NAME}` syntax, **When** validation runs, **Then** the literal parsed
+    value is validated and no interpolation is performed.
+"""
+          new = old + """12. **Given** a string value contains a multibyte UTF-8 character such as `é` and the schema
+    requires `min_length = 1` and `max_length = 1`, **When** validation runs, **Then** the value is
+    accepted because string length is measured in Unicode scalar values rather than UTF-8 bytes.
+"""
+          spec = replace_once(spec, old, new, "US2 Unicode length acceptance scenario")
+
+          old = "- A string is shorter or longer than the declared length boundaries by exactly one character.\n"
+          new = old + "- A string contains multibyte UTF-8 characters; length is counted in Unicode scalar values, not bytes.\n"
+          spec = replace_once(spec, old, new, "Unicode length edge case")
+
+          old = """- **FR-036**: `min_length` and `max_length` MUST be valid only for `string` variables and MUST be
+  non-negative whole numbers.
+"""
+          new = """- **FR-036**: `min_length` and `max_length` MUST be valid only for `string` variables and MUST be
+  non-negative whole numbers. String length MUST be measured in Unicode scalar values (equivalent to
+  Rust `str::chars().count()` semantics), not UTF-8 bytes.
+"""
+          spec = replace_once(spec, old, new, "FR-036 Unicode length semantics")
+          spec_path.write_text(spec)
+
+          # C1/G2: strengthen release sequencing and cross-platform verification in the plan.
+          plan_path = Path("specs/001-env-validation/plan.md")
+          plan = plan_path.read_text()
+
+          old = "**Testing**: `cargo test`; module-local unit tests for parsers and validation rules; integration tests under `tests/` using `assert_cmd` to execute the built `envcheck` binary. Quality gates: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`.\n"
+          new = "**Testing**: `cargo test`; module-local unit tests for parsers and validation rules; integration tests under `tests/` using `assert_cmd` to execute the built `envcheck` binary. A CI matrix MUST execute the test suite on Linux, macOS, and Windows before release. Quality gates: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`.\n"
+          plan = replace_once(plan, old, new, "plan testing matrix")
+
+          old = "- **VIII. Cross-Platform Behavior — PASS**: paths use `PathBuf`; tests use `tempfile`; newline handling is covered for LF/CRLF.\n"
+          new = "- **VIII. Cross-Platform Behavior — PASS**: paths use `PathBuf`; tests use `tempfile`; newline handling is covered for LF/CRLF; release verification includes CI execution on Linux, macOS, and Windows.\n"
+          plan = replace_once(plan, old, new, "constitution cross-platform gate")
+
+          old = "## Design Decisions\n\n"
+          new = old + """### Release sequencing safety gate
+
+US1 and US2 provide the two P1 capabilities, but completing valid-schema behavior alone is not a
+safe release boundary. **No public MVP or release may stop after US2.** US3's invalid-schema
+strictness and negative tests are a mandatory correctness gate before release so malformed,
+unsupported, or semantically incompatible schemas cannot be silently accepted.
+
+"""
+          plan = replace_once(plan, old, new, "release sequencing safety gate")
+
+          old = "- Cross-platform paths/newlines and Windows/macOS/Linux execution are part of acceptance validation.\n"
+          new = "- Cross-platform paths/newlines are covered by regression tests, and the release CI matrix executes the suite on Linux, macOS, and Windows.\n"
+          plan = replace_once(plan, old, new, "post-design cross-platform matrix")
+          plan_path.write_text(plan)
+
+          # C1/C2/G1/G2: strengthen task sequencing and verification coverage.
+          tasks_path = Path("specs/001-env-validation/tasks.md")
+          tasks = tasks_path.read_text()
+
+          old = "**Checkpoint**: Both P1 capabilities—explicit `.env.example` comparison and valid-schema typed validation—work independently.\n"
+          new = "**Checkpoint**: Both P1 capabilities—explicit `.env.example` comparison and valid-schema typed validation—work independently. This is not a release boundary: US3 MUST complete before any public MVP or release so invalid schemas cannot be silently accepted.\n"
+          tasks = replace_once(tasks, old, new, "US2 release checkpoint")
+
+          old = "- [ ] T046 [US4] Add deterministic-output integration coverage by running the same representative validation repeatedly and asserting identical diagnostic content/order in `tests/cli.rs`\n"
+          new = "- [ ] T046 [US4] Add deterministic-output integration coverage by running the same representative validation exactly 100 times and asserting identical exit code, stdout, stderr, diagnostic content, and diagnostic order across all runs in `tests/cli.rs`\n"
+          tasks = replace_once(tasks, old, new, "SC-004 exact 100 runs")
+
+          old = """- [ ] T051 [P] Add cross-platform regression cases for LF/CRLF, temporary paths, case-sensitive variable identity, and portable file handling in `src/env/parser.rs` and `tests/cli.rs`
+- [ ] T052 [P] Review all test fixtures for synthetic-only environment values and add explicit redaction regression assertions for representative secret-bearing inputs in `tests/cli.rs`
+- [ ] T053 Execute every scenario documented in `specs/001-env-validation/quickstart.md` and update only that file if observed command examples or expected outcomes need correction
+- [ ] T054 Run `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`, fixing any violations in `Cargo.toml`, `src/`, and `tests/` without changing the published contracts
+- [ ] T055 Audit dependency/API usage against the design constraints in `Cargo.toml` and `src/env/parser.rs`, ensuring Envcheck uses only dotenv scanning/tokenization and never dotenv expansion, evaluation, decryption, environment injection, or network-capable behavior
+"""
+          new = """- [ ] T051 [P] Add cross-platform regression cases for LF/CRLF, temporary paths, case-sensitive variable identity, and portable file handling in `src/env/parser.rs` and `tests/cli.rs`
+- [ ] T052 [P] Add a GitHub Actions CI matrix in `.github/workflows/ci.yml` that runs the Envcheck test suite on `ubuntu-latest`, `macos-latest`, and `windows-latest`, so SC-007 is demonstrated on all three supported operating systems before release
+- [ ] T053 Review all test fixtures for synthetic-only environment values and add explicit redaction plus byte-for-byte read-only regression assertions in `tests/cli.rs`, proving `.env`, `.env.example`, and `.env.schema` remain unchanged after representative successful and failing invocations
+- [ ] T054 Execute every scenario documented in `specs/001-env-validation/quickstart.md` and update only that file if observed command examples or expected outcomes need correction
+- [ ] T055 Run `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`, fixing any violations in `Cargo.toml`, `src/`, and `tests/` without changing the published contracts
+- [ ] T056 Audit dependency/API usage against the design constraints in `Cargo.toml` and `src/env/parser.rs`, ensuring Envcheck uses only dotenv scanning/tokenization and never dotenv expansion, evaluation, decryption, environment injection, or network-capable behavior
+"""
+          tasks = replace_once(tasks, old, new, "polish verification tasks")
+
+          old = "- **US3 (P2)**: Extends US2's schema parser/model with strict invalid-definition handling.\n"
+          new = "- **US3 (P2)**: Extends US2's schema parser/model with strict invalid-definition handling and is a mandatory correctness/release gate; no public MVP or release may stop after US2.\n"
+          tasks = replace_once(tasks, old, new, "US3 release gate dependency")
+
+          old = "- Cross-platform/security regression work T051 and T052 can proceed in parallel before the final quickstart and quality-gate tasks.\n"
+          new = "- Cross-platform regression work T051 and CI-matrix setup T052 can proceed in parallel; security/read-only regression T053 follows once representative CLI flows exist.\n"
+          tasks = replace_once(tasks, old, new, "parallel polish tasks")
+
+          old = """The requested first implementation contains both P1 stories:
+
+1. Complete Phase 1: Setup.
+2. Complete Phase 2: Foundational.
+3. Complete Phase 3: US1 — explicit `.env.example` comparison.
+4. Complete Phase 4: US2 — explicit valid `.env.schema` validation for `string`, `integer`, `float`, and `boolean`.
+5. **STOP AND VALIDATE** both P1 stories independently before adding P2 hardening/integration behavior.
+
+This produces the smallest release candidate that satisfies the user's explicitly requested first-implementation capabilities. US3 and US4 then harden schema definitions and complete automatic discovery/public CLI behavior required by the full feature specification.
+"""
+          new = """The requested first implementation centers on both P1 capabilities, but correctness requires US3 before any public release:
+
+1. Complete Phase 1: Setup.
+2. Complete Phase 2: Foundational.
+3. Complete Phase 3: US1 — explicit `.env.example` comparison.
+4. Complete Phase 4: US2 — explicit valid `.env.schema` validation for `string`, `integer`, `float`, and `boolean`.
+5. Complete Phase 5: US3 — strict rejection of malformed, unsupported, or semantically invalid schemas.
+6. **STOP AND VALIDATE** US1, US2, and US3 independently before treating the result as a release candidate.
+
+US1 and US2 remain the feature-focus of the first implementation, while US3 is a mandatory safety/correctness gate rather than optional later hardening. US4 then completes automatic discovery and the full public CLI integration behavior.
+"""
+          tasks = replace_once(tasks, old, new, "MVP release sequencing")
+          tasks_path.write_text(tasks)
+
+      - name: Commit remediation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add specs/001-env-validation/spec.md specs/001-env-validation/plan.md specs/001-env-validation/tasks.md
+          git commit -m "docs: resolve analyze findings"
+          git push
