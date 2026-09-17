@@ -1,6 +1,6 @@
 use crate::env::EnvDocument;
-use crate::validation::error::{Diagnostic, RuleCode, Severity};
 use crate::validation::ValidationResult;
+use crate::validation::error::{Diagnostic, RuleCode, Severity};
 
 pub(crate) fn validate_example_presence(
     target: &EnvDocument,
