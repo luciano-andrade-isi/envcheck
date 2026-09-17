@@ -1,0 +1,383 @@
+name: Foundational RED Tests
+
+on:
+  push:
+    branches:
+      - chore/init-spec-kit
+    paths:
+      - .github/workflows/foundational-red-tests.yml
+
+permissions:
+  contents: write
+
+jobs:
+  red:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: chore/init-spec-kit
+          fetch-depth: 0
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+          grep -F -- '- [X] T001 ' specs/001-env-validation/tasks.md
+          grep -F -- '- [X] T002 ' specs/001-env-validation/tasks.md
+          for task in T003 T004 T005; do
+            grep -F -- "- [ ] $task " specs/001-env-validation/tasks.md
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for path in sorted(Path('specs/001-env-validation/checklists').glob('*.md')):
+              text = path.read_text()
+              unchecked = len(re.findall(r'^- \[ \] ', text, flags=re.M))
+              if unchecked:
+                  raise SystemExit(f'Checklist gate failed: {path} has {unchecked} unchecked items')
+          PY
+          git rev-parse --git-dir >/dev/null
+          grep -Eq '^(target|target/|/target/?)$' .gitignore
+          grep -F '**/*.rs.bk' .gitignore
+
+      - name: Add T003 parser contract tests
+        shell: bash
+        run: |
+          cat > src/env/parser.rs <<'RS'
+          #[cfg(test)]
+          mod tests {
+              use std::path::{Path, PathBuf};
+
+              use super::parse_dotenv;
+
+              fn parse(input: &str) -> crate::env::EnvDocument {
+                  parse_dotenv(Path::new(".env"), input).expect("dotenv input should parse")
+              }
+
+              #[test]
+              fn ignores_blank_and_comment_only_lines() {
+                  let document = parse("\n# comment\nAPP_NAME=value\n   \n# second comment\nPORT=3000\n");
+
+                  assert_eq!(document.entries.len(), 2);
+                  assert_eq!(document.entries[0].key, "APP_NAME");
+                  assert_eq!(document.entries[0].value, "value");
+                  assert_eq!(document.entries[0].line, 3);
+                  assert_eq!(document.entries[1].key, "PORT");
+                  assert_eq!(document.entries[1].value, "3000");
+                  assert_eq!(document.entries[1].line, 6);
+              }
+
+              #[test]
+              fn removes_common_quote_delimiters_without_losing_content() {
+                  let document = parse("SINGLE='value with # and ='\nDOUBLE=\"value with # and =\"\n");
+
+                  assert_eq!(document.entries[0].value, "value with # and =");
+                  assert_eq!(document.entries[1].value, "value with # and =");
+              }
+
+              #[test]
+              fn accepts_export_prefix_and_crlf_line_endings() {
+                  let document = parse("export APP_NAME=value\r\nexport PORT=3000\r\n");
+
+                  assert_eq!(document.entries.len(), 2);
+                  assert_eq!(document.entries[0].key, "APP_NAME");
+                  assert_eq!(document.entries[0].line, 1);
+                  assert_eq!(document.entries[1].key, "PORT");
+                  assert_eq!(document.entries[1].line, 2);
+              }
+
+              #[test]
+              fn preserves_empty_and_literal_interpolation_values() {
+                  let document = parse("EMPTY=\nREFERENCE=${NAME}\n");
+
+                  assert_eq!(document.entries[0].value, "");
+                  assert_eq!(document.entries[1].value, "${NAME}");
+              }
+
+              #[test]
+              fn preserves_duplicate_assignments_in_source_order() {
+                  let document = parse("PORT=3000\nPORT=4000\n");
+
+                  assert_eq!(document.entries.len(), 2);
+                  assert_eq!(document.entries[0].key, "PORT");
+                  assert_eq!(document.entries[0].value, "3000");
+                  assert_eq!(document.entries[0].line, 1);
+                  assert_eq!(document.entries[1].key, "PORT");
+                  assert_eq!(document.entries[1].value, "4000");
+                  assert_eq!(document.entries[1].line, 2);
+              }
+
+              #[test]
+              fn rejects_non_comment_lines_that_are_not_assignments() {
+                  let error = parse_dotenv(Path::new(".env"), "APP_NAME=value\nnot an assignment\n")
+                      .expect_err("malformed non-comment line must fail");
+
+                  assert_eq!(error.path, PathBuf::from(".env"));
+                  assert_eq!(error.line, Some(2));
+              }
+
+              #[test]
+              fn enforces_identifier_grammar() {
+                  for invalid in ["1PORT=value\n", "APP-NAME=value\n", "APP.NAME=value\n"] {
+                      assert!(parse_dotenv(Path::new(".env"), invalid).is_err(), "{invalid}");
+                  }
+
+                  for valid in ["_PORT=value\n", "APP_NAME=value\n", "A1=value\n"] {
+                      assert!(parse_dotenv(Path::new(".env"), valid).is_ok(), "{valid}");
+                  }
+              }
+
+              #[test]
+              fn treats_variable_names_as_case_sensitive() {
+                  let document = parse("PORT=3000\nport=4000\n");
+
+                  assert_eq!(document.entries.len(), 2);
+                  assert_eq!(document.entries[0].key, "PORT");
+                  assert_eq!(document.entries[1].key, "port");
+              }
+
+              #[test]
+              fn applies_inline_hash_semantics() {
+                  let document = parse(
+                      "COMMENTED=value # comment\nUNQUOTED=value#literal\nDOUBLE=\"value # literal\"\nSINGLE='value # literal'\n",
+                  );
+
+                  assert_eq!(document.entries[0].value, "value");
+                  assert_eq!(document.entries[1].value, "value#literal");
+                  assert_eq!(document.entries[2].value, "value # literal");
+                  assert_eq!(document.entries[3].value, "value # literal");
+              }
+
+              #[test]
+              fn malformed_identifier_error_keeps_known_line_without_exposing_value() {
+                  let secret = "synthetic-secret-value";
+                  let input = format!("GOOD=ok\n# comment\n1SECRET={secret}\n");
+                  let error = parse_dotenv(Path::new(".env"), &input)
+                      .expect_err("invalid identifier must be rejected by Envcheck");
+
+                  assert_eq!(error.path, PathBuf::from(".env"));
+                  assert_eq!(error.line, Some(3));
+                  assert!(!error.reason.contains(secret));
+                  assert!(!format!("{error}").contains(secret));
+                  assert!(!format!("{error:?}").contains(secret));
+              }
+          }
+          RS
+
+      - name: Add T004 diagnostic/result contract tests
+        shell: bash
+        run: |
+          cat > src/validation/mod.rs <<'RS'
+          pub(crate) mod error;
+          pub(crate) mod rules;
+          pub(crate) mod validator;
+
+          #[cfg(test)]
+          mod tests {
+              use super::ValidationResult;
+              use super::error::{Diagnostic, RuleCode, Severity};
+
+              fn diagnostic(
+                  severity: Severity,
+                  variable: &str,
+                  code: RuleCode,
+                  line: usize,
+              ) -> Diagnostic {
+                  Diagnostic {
+                      severity,
+                      code,
+                      variable: Some(variable.to_owned()),
+                      rule: "synthetic rule".to_owned(),
+                      expected: None,
+                      line: Some(line),
+                  }
+              }
+
+              #[test]
+              fn sorts_diagnostics_canonically() {
+                  let mut result = ValidationResult {
+                      diagnostics: vec![
+                          diagnostic(Severity::Warning, "A", RuleCode::AdditionalVariable, 1),
+                          diagnostic(Severity::Error, "B", RuleCode::MissingRequired, 1),
+                          diagnostic(Severity::Error, "A", RuleCode::TypeMismatch, 1),
+                          diagnostic(Severity::Error, "A", RuleCode::MissingRequired, 4),
+                          diagnostic(Severity::Error, "A", RuleCode::MissingRequired, 2),
+                      ],
+                  };
+
+                  result.sort_diagnostics();
+
+                  assert_eq!(result.diagnostics[0].severity, Severity::Error);
+                  assert_eq!(result.diagnostics[0].variable.as_deref(), Some("A"));
+                  assert_eq!(result.diagnostics[0].code, RuleCode::MissingRequired);
+                  assert_eq!(result.diagnostics[0].line, Some(2));
+
+                  assert_eq!(result.diagnostics[1].code, RuleCode::MissingRequired);
+                  assert_eq!(result.diagnostics[1].line, Some(4));
+
+                  assert_eq!(result.diagnostics[2].code, RuleCode::TypeMismatch);
+                  assert_eq!(result.diagnostics[3].variable.as_deref(), Some("B"));
+                  assert_eq!(result.diagnostics[4].severity, Severity::Warning);
+              }
+
+              #[test]
+              fn warnings_only_do_not_count_as_errors() {
+                  let result = ValidationResult {
+                      diagnostics: vec![diagnostic(
+                          Severity::Warning,
+                          "LEGACY_FLAG",
+                          RuleCode::AdditionalVariable,
+                          1,
+                      )],
+                  };
+
+                  assert!(!result.has_errors());
+              }
+          }
+          RS
+
+      - name: Add T005 CLI argument contract tests
+        shell: bash
+        run: |
+          cat > src/cli.rs <<'RS'
+          #[cfg(test)]
+          mod tests {
+              use std::path::PathBuf;
+
+              use clap::{Parser, error::ErrorKind};
+
+              use super::Cli;
+
+              #[test]
+              fn env_file_is_required() {
+                  let error = Cli::try_parse_from(["envcheck"])
+                      .expect_err("ENV_FILE must be a mandatory positional argument");
+
+                  assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+              }
+
+              #[test]
+              fn example_and_schema_flags_are_mutually_exclusive() {
+                  let error = Cli::try_parse_from([
+                      "envcheck",
+                      ".env",
+                      "--example",
+                      ".env.example",
+                      "--schema",
+                      ".env.schema",
+                  ])
+                  .expect_err("--example and --schema must conflict");
+
+                  assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
+              }
+
+              #[test]
+              fn target_without_explicit_definition_is_a_valid_argument_shape() {
+                  let cli = Cli::try_parse_from(["envcheck", ".env"])
+                      .expect("definition discovery is allowed after CLI parsing");
+
+                  assert_eq!(cli.env_file, PathBuf::from(".env"));
+                  assert_eq!(cli.example, None);
+                  assert_eq!(cli.schema, None);
+              }
+          }
+          RS
+
+      - name: Format test code
+        run: cargo fmt
+
+      - name: Observe expected RED state
+        shell: bash
+        run: |
+          set +e
+          cargo test --lib > /tmp/lib.log 2>&1
+          lib_status=$?
+          cargo test --bin envcheck > /tmp/bin.log 2>&1
+          bin_status=$?
+          cargo test --test cli > /tmp/integration.log 2>&1
+          integration_status=$?
+          set -e
+
+          echo '--- cargo test --lib ---'
+          cat /tmp/lib.log
+          echo "status=$lib_status"
+          echo '--- cargo test --bin envcheck ---'
+          cat /tmp/bin.log
+          echo "status=$bin_status"
+          echo '--- cargo test --test cli ---'
+          cat /tmp/integration.log
+          echo "status=$integration_status"
+
+          test "$lib_status" -ne 0
+          grep -F 'no library targets found' /tmp/lib.log
+
+          test "$bin_status" -ne 0
+          grep -E 'parse_dotenv|EnvDocument' /tmp/bin.log
+          grep -E 'ValidationResult|Diagnostic|RuleCode|Severity' /tmp/bin.log
+          grep -E 'Cli' /tmp/bin.log
+
+          test "$integration_status" -eq 0
+
+      - name: Mark only T003-T005 complete
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('specs/001-env-validation/tasks.md')
+          text = path.read_text()
+          for task in ('T003', 'T004', 'T005'):
+              old = f'- [ ] {task} '
+              new = f'- [X] {task} '
+              if text.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one unchecked {task}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          checked = re.findall(r'^- \[(?:X|x)\] (T\d{3})\b', text, flags=re.M)
+          expected = ['T001', 'T002', 'T003', 'T004', 'T005']
+          if checked != expected:
+              raise SystemExit(f'Unexpected checked tasks: {checked}')
+          print('Checked task IDs:', ', '.join(checked))
+          PY
+
+      - name: Verify scope and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/foundational-red-tests.yml
+          cargo fmt --check
+
+          python3 - <<'PY'
+          import subprocess
+          allowed = {
+              'src/env/parser.rs',
+              'src/validation/mod.rs',
+              'src/cli.rs',
+              'specs/001-env-validation/tasks.md',
+              '.github/workflows/foundational-red-tests.yml',
+          }
+          paths = []
+          for line in subprocess.check_output(['git', 'status', '--porcelain'], text=True).splitlines():
+              path = line[3:]
+              if ' -> ' in path:
+                  path = path.split(' -> ', 1)[1]
+              paths.append(path)
+          unexpected = sorted(set(paths) - allowed)
+          if unexpected:
+              raise SystemExit(f'Unexpected changed paths: {unexpected}')
+          print('Changed paths:', ', '.join(paths))
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'test: define envcheck foundational contracts'
+          git push origin HEAD:chore/init-spec-kit
