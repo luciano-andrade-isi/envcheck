@@ -60,6 +60,7 @@ jobs:
           set -euo pipefail
 
           cargo init --bin --name envcheck --edition 2024 .
+          git checkout -- .gitignore
           cargo add clap@4 --features derive
           cargo add serde@1 --features derive
           cargo add toml@1
@@ -222,7 +223,7 @@ jobs:
               'Cargo.toml',
               'Cargo.lock',
               'src/',
-              'tests/cli.rs',
+              'tests/',
               'specs/001-env-validation/tasks.md',
               '.github/workflows/phase1-setup.yml',
           )
