@@ -2,6 +2,32 @@ pub(crate) mod error;
 pub(crate) mod rules;
 pub(crate) mod validator;
 
+use error::Severity;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ValidationResult {
+    pub(crate) diagnostics: Vec<error::Diagnostic>,
+}
+
+impl ValidationResult {
+    pub(crate) fn has_errors(&self) -> bool {
+        self.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == Severity::Error)
+    }
+
+    pub(crate) fn sort_diagnostics(&mut self) {
+        self.diagnostics.sort_by(|left, right| {
+            left.severity
+                .sort_rank()
+                .cmp(&right.severity.sort_rank())
+                .then_with(|| left.variable.cmp(&right.variable))
+                .then_with(|| left.code.as_str().cmp(right.code.as_str()))
+                .then_with(|| left.line.cmp(&right.line))
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::ValidationResult;

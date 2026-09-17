@@ -1,3 +1,20 @@
+use std::path::PathBuf;
+
+use clap::Parser;
+
+#[derive(Debug, Parser)]
+#[command(name = "envcheck", version, about = "Validate environment files")]
+pub(crate) struct Cli {
+    #[arg(value_name = "ENV_FILE")]
+    pub(crate) env_file: PathBuf,
+
+    #[arg(long, value_name = "FILE", conflicts_with = "schema")]
+    pub(crate) example: Option<PathBuf>,
+
+    #[arg(long, value_name = "FILE", conflicts_with = "example")]
+    pub(crate) schema: Option<PathBuf>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;

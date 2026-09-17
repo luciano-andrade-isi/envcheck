@@ -1,3 +1,168 @@
+use std::fmt;
+use std::path::{Path, PathBuf};
+
+use dotenvx_primitives::{ScanOptions, scan};
+
+use super::{EnvDocument, EnvEntry};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DotenvParseError {
+    pub(crate) path: PathBuf,
+    pub(crate) reason: &'static str,
+    pub(crate) line: Option<usize>,
+    pub(crate) column: Option<usize>,
+}
+
+impl DotenvParseError {
+    fn at_line(path: &Path, line: usize, reason: &'static str) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            reason,
+            line: Some(line),
+            column: None,
+        }
+    }
+}
+
+impl fmt::Display for DotenvParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}: {}", self.path.display(), self.reason)?;
+        if let Some(line) = self.line {
+            write!(formatter, " at line {line}")?;
+            if let Some(column) = self.column {
+                write!(formatter, ", column {column}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for DotenvParseError {}
+
+pub(crate) fn parse_dotenv(path: &Path, input: &str) -> Result<EnvDocument, DotenvParseError> {
+    let normalized = input.replace("\r\n", "\n").replace('\r', "\n");
+    let mut entries = Vec::new();
+
+    for (line_index, line) in normalized.lines().enumerate() {
+        let line_number = line_index + 1;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let (key, raw_value) = assignment_parts(line).ok_or_else(|| {
+            DotenvParseError::at_line(path, line_number, "invalid dotenv declaration")
+        })?;
+
+        if !is_valid_identifier(key) {
+            return Err(DotenvParseError::at_line(
+                path,
+                line_number,
+                "invalid variable name",
+            ));
+        }
+
+        if quoted_value_is_unterminated(raw_value) {
+            return Err(DotenvParseError::at_line(
+                path,
+                line_number,
+                "unterminated quoted value",
+            ));
+        }
+
+        let scanned = scan(line, &ScanOptions::default());
+        let scanned_value = scanned
+            .parsed
+            .get(key)
+            .and_then(|values| (values.len() == 1).then(|| values[0].clone()))
+            .ok_or_else(|| {
+                DotenvParseError::at_line(path, line_number, "invalid dotenv declaration")
+            })?;
+
+        let value = if starts_with_supported_quote(raw_value) {
+            scanned_value
+        } else {
+            clean_unquoted_value(raw_value)
+        };
+
+        entries.push(EnvEntry {
+            key: key.to_owned(),
+            value,
+            line: line_number,
+        });
+    }
+
+    Ok(EnvDocument::new(path.to_path_buf(), entries))
+}
+
+fn assignment_parts(line: &str) -> Option<(&str, &str)> {
+    let mut input = line.trim_start();
+    if let Some(rest) = input.strip_prefix("export ") {
+        input = rest.trim_start();
+    }
+
+    let equals = input.find('=')?;
+    let key = input[..equals].trim();
+    if key.is_empty() {
+        return None;
+    }
+
+    Some((key, &input[equals + 1..]))
+}
+
+fn is_valid_identifier(name: &str) -> bool {
+    let mut characters = name.chars();
+    let Some(first) = characters.next() else {
+        return false;
+    };
+
+    (first.is_ascii_alphabetic() || first == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+fn starts_with_supported_quote(raw_value: &str) -> bool {
+    matches!(raw_value.trim_start().chars().next(), Some('\'' | '"'))
+}
+
+fn quoted_value_is_unterminated(raw_value: &str) -> bool {
+    let input = raw_value.trim_start();
+    let Some(quote @ ('\'' | '"')) = input.chars().next() else {
+        return false;
+    };
+
+    let mut escaped = false;
+    for character in input[quote.len_utf8()..].chars() {
+        if character == quote && !escaped {
+            return false;
+        }
+        escaped = character == '\\' && !escaped;
+        if character != '\\' {
+            escaped = false;
+        }
+    }
+
+    true
+}
+
+fn clean_unquoted_value(raw_value: &str) -> String {
+    let input = raw_value.trim();
+    for (index, character) in input.char_indices() {
+        if character != '#' {
+            continue;
+        }
+
+        let preceded_by_whitespace = input[..index]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_whitespace);
+        if preceded_by_whitespace {
+            return input[..index].trim_end().to_owned();
+        }
+    }
+
+    input.to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
