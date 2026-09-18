@@ -288,5 +288,5 @@ After Foundation:
 
 ## Phase 8: Convergence
 
-- [ ] T057 Gate `.github/workflows/release.yml` so a push to `main` can create its tag/release only after the required `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` matrix has succeeded on Linux, macOS, and Windows, preserving the existing release assets while enforcing the pre-release CI gate per plan: Testing (contradicts)
-- [ ] T058 Implement exact numeric-meaning comparison for TOML integer values used by float `min`/`max`/`allowed` constraints without lossy `i64 as f64` equality, and add focused unit/CLI regressions around `2^53` precision boundaries and large `i64` values while preserving finite-`f64` target semantics per FR-039 and plan: Schema parsing strategy (partial)
+- [X] T057 Gate `.github/workflows/release.yml` so a push to `main` can create its tag/release only after the required `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` matrix has succeeded on Linux, macOS, and Windows, preserving the existing release assets while enforcing the pre-release CI gate per plan: Testing (contradicts)
+- [X] T058 Implement exact numeric-meaning comparison for TOML integer values used by float `min`/`max`/`allowed` constraints without lossy `i64 as f64` equality, and add focused unit/CLI regressions around `2^53` precision boundaries and large `i64` values while preserving finite-`f64` target semantics per FR-039 and plan: Schema parsing strategy (partial)
