@@ -1,0 +1,172 @@
+name: Build and Release
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Linux x86_64
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Prepare release asset
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/envcheck dist/envcheck-linux-x86_64
+          chmod +x dist/envcheck-linux-x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: envcheck-linux-x86_64
+          path: dist/envcheck-linux-x86_64
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows x86_64
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Prepare release asset
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/envcheck.exe dist/envcheck-windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: envcheck-windows-x86_64
+          path: dist/envcheck-windows-x86_64.exe
+          if-no-files-found: error
+
+  build-macos:
+    name: macOS Universal
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Build Intel binary
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Build Apple Silicon binary
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Create universal binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          lipo -create \
+            target/x86_64-apple-darwin/release/envcheck \
+            target/aarch64-apple-darwin/release/envcheck \
+            -output dist/envcheck-macos-universal
+          chmod +x dist/envcheck-macos-universal
+          lipo -info dist/envcheck-macos-universal
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: envcheck-macos-universal
+          path: dist/envcheck-macos-universal
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Prepare release metadata
+        id: release
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::Unable to read package version from Cargo.toml"
+            exit 1
+          fi
+
+          TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
+          SHORT_SHA="${SOURCE_SHA::7}"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum \
+            envcheck-linux-x86_64 \
+            envcheck-windows-x86_64.exe \
+            envcheck-macos-universal \
+            > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          SHORT_SHA: ${{ steps.release.outputs.short_sha }}
+        shell: bash
+        run: |
+          gh release create "$TAG" \
+            dist/envcheck-linux-x86_64 \
+            dist/envcheck-windows-x86_64.exe \
+            dist/envcheck-macos-universal \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "Envcheck v$VERSION (build $GITHUB_RUN_NUMBER)" \
+            --notes "Automated release from main at commit $SHORT_SHA after the CI workflow completed successfully."
