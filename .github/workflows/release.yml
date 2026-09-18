@@ -1,7 +1,11 @@
 name: Build and Release
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
 
@@ -11,9 +15,12 @@ permissions:
 jobs:
   build-linux:
     name: Linux x86_64
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -35,9 +42,12 @@ jobs:
 
   build-windows:
     name: Windows x86_64
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -58,9 +68,12 @@ jobs:
 
   build-macos:
     name: macOS Universal
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -73,9 +86,13 @@ jobs:
         run: cargo build --release --target aarch64-apple-darwin
 
       - name: Create universal binary
+        shell: bash
         run: |
           mkdir -p dist
-          lipo -create             target/x86_64-apple-darwin/release/envcheck             target/aarch64-apple-darwin/release/envcheck             -output dist/envcheck-macos-universal
+          lipo -create \
+            target/x86_64-apple-darwin/release/envcheck \
+            target/aarch64-apple-darwin/release/envcheck \
+            -output dist/envcheck-macos-universal
           chmod +x dist/envcheck-macos-universal
           lipo -info dist/envcheck-macos-universal
 
@@ -97,6 +114,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -105,6 +124,8 @@ jobs:
 
       - name: Prepare release metadata
         id: release
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
@@ -114,7 +135,7 @@ jobs:
           fi
 
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
-          SHORT_SHA="${GITHUB_SHA::7}"
+          SHORT_SHA="${SOURCE_SHA::7}"
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -124,15 +145,28 @@ jobs:
         shell: bash
         run: |
           cd dist
-          sha256sum             envcheck-linux-x86_64             envcheck-windows-x86_64.exe             envcheck-macos-universal             > SHA256SUMS.txt
+          sha256sum \
+            envcheck-linux-x86_64 \
+            envcheck-windows-x86_64.exe \
+            envcheck-macos-universal \
+            > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create release and tag
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
           SHORT_SHA: ${{ steps.release.outputs.short_sha }}
         shell: bash
         run: |
-          gh release create "$TAG"             dist/envcheck-linux-x86_64             dist/envcheck-windows-x86_64.exe             dist/envcheck-macos-universal             dist/SHA256SUMS.txt             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "Envcheck v$VERSION (build $GITHUB_RUN_NUMBER)"             --notes "Automated release from main at commit $SHORT_SHA."
+          gh release create "$TAG" \
+            dist/envcheck-linux-x86_64 \
+            dist/envcheck-windows-x86_64.exe \
+            dist/envcheck-macos-universal \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "Envcheck v$VERSION (build $GITHUB_RUN_NUMBER)" \
+            --notes "Automated release from main at commit $SHORT_SHA after the CI workflow completed successfully."

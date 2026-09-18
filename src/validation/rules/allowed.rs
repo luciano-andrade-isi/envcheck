@@ -2,6 +2,8 @@
 
 use crate::schema::model::{SchemaScalar, VariableType};
 
+use super::numeric::compare_float_to_integer;
+
 // Exact finite-f64 equality is the specified `allowed` contract for float values.
 #[allow(clippy::float_cmp, dead_code)]
 pub(crate) fn is_allowed(
@@ -18,7 +20,9 @@ pub(crate) fn is_allowed(
         ),
         (VariableType::Float, SchemaScalar::Float(value)) if value.is_finite() => {
             allowed.iter().any(|candidate| match candidate {
-                SchemaScalar::Integer(candidate) => (*candidate as f64) == *value,
+                SchemaScalar::Integer(candidate) => {
+                    compare_float_to_integer(*value, *candidate).is_eq()
+                }
                 SchemaScalar::Float(candidate) => candidate.is_finite() && *candidate == *value,
                 SchemaScalar::String(_) | SchemaScalar::Boolean(_) => false,
             })
@@ -82,6 +86,28 @@ mod tests {
         assert!(!is_allowed(
             &SchemaScalar::Float(3.0),
             &allowed,
+            VariableType::Float
+        ));
+    }
+
+    #[test]
+    fn float_allowed_integer_comparison_preserves_numeric_meaning_beyond_two_to_the_53() {
+        let unrepresentable_odd = [SchemaScalar::Integer(9_007_199_254_740_993)];
+        assert!(!is_allowed(
+            &SchemaScalar::Float(9_007_199_254_740_992.0),
+            &unrepresentable_odd,
+            VariableType::Float
+        ));
+        assert!(!is_allowed(
+            &SchemaScalar::Float(9_007_199_254_740_994.0),
+            &unrepresentable_odd,
+            VariableType::Float
+        ));
+
+        let representable_even = [SchemaScalar::Integer(9_007_199_254_740_994)];
+        assert!(is_allowed(
+            &SchemaScalar::Float(9_007_199_254_740_994.0),
+            &representable_even,
             VariableType::Float
         ));
     }

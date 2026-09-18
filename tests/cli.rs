@@ -1130,3 +1130,48 @@ fn representative_success_and_failure_leave_all_input_files_byte_for_byte_unchan
         schema_bytes
     );
 }
+
+#[test]
+fn convergence_float_allowed_integer_keeps_exact_numeric_meaning_beyond_two_to_the_53() {
+    let fixture = SchemaFixture::new(
+        "VALUE=9007199254740992\n",
+        r#"
+version = 1
+[variables.VALUE]
+type = "float"
+required = true
+allowed = [9007199254740993]
+"#,
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("configured allowed set"));
+    assert!(stderr(&output).is_empty());
+    assert_target_values_redacted(&output, &["9007199254740992"]);
+}
+
+#[test]
+fn convergence_float_integer_min_keeps_exact_numeric_meaning_beyond_two_to_the_53() {
+    let fixture = SchemaFixture::new(
+        "VALUE=9007199254740992\n",
+        r#"
+version = 1
+[variables.VALUE]
+type = "float"
+required = true
+min = 9007199254740993
+"#,
+    );
+
+    let output = run_schema(&fixture.target, &fixture.schema);
+
+    assert_eq!(output.status.code(), Some(1));
+    let rendered = stdout(&output);
+    assert!(rendered.contains("configured minimum"));
+    assert!(rendered.contains("float >= 9007199254740993"));
+    assert!(stderr(&output).is_empty());
+    assert_target_values_redacted(&output, &["9007199254740992"]);
+}
+

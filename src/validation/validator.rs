@@ -138,12 +138,16 @@ fn apply_type_constraints(
             }
         }
         (VariableType::Float, SchemaScalar::Float(value)) => {
-            let min = rule.min.as_ref().and_then(float_bound);
-            let max = rule.max.as_ref().and_then(float_bound);
+            let min = rule.min.as_ref();
+            let max = rule.max.as_ref();
             for code in validate_float_bounds(*value, min, max) {
                 let expected = match code {
-                    RuleCode::BelowMin => min.map(|bound| format!("float >= {bound}")),
-                    RuleCode::AboveMax => max.map(|bound| format!("float <= {bound}")),
+                    RuleCode::BelowMin => min.map(|bound| {
+                        format!("float >= {}", numeric_constraint_display(bound))
+                    }),
+                    RuleCode::AboveMax => max.map(|bound| {
+                        format!("float <= {}", numeric_constraint_display(bound))
+                    }),
                     _ => None,
                 };
                 diagnostics.push(validation_error(
@@ -199,11 +203,11 @@ fn integer_bound(value: &SchemaScalar) -> Option<i64> {
     }
 }
 
-fn float_bound(value: &SchemaScalar) -> Option<f64> {
+fn numeric_constraint_display(value: &SchemaScalar) -> String {
     match value {
-        SchemaScalar::Integer(value) => Some(*value as f64),
-        SchemaScalar::Float(value) if value.is_finite() => Some(*value),
-        _ => None,
+        SchemaScalar::Integer(value) => value.to_string(),
+        SchemaScalar::Float(value) if value.is_finite() => value.to_string(),
+        _ => unreachable!("validated numeric constraint must be finite"),
     }
 }
 
